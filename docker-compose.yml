@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: ai_tg_writer_bot
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=ai_tg_writer
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    volumes:
+      - ./audio:/app/audio
+    networks:
+      - ai_tg_writer_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai_tg_writer_postgres
+    environment:
+      - POSTGRES_DB=ai_tg_writer
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    networks:
+      - ai_tg_writer_network
+
+  # Redis для кэширования (опционально, для будущего использования)
+  redis:
+    image: redis:7-alpine
+    container_name: ai_tg_writer_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - ai_tg_writer_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  ai_tg_writer_network:
+    driver: bridge 

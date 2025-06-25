@@ -1,0 +1,35 @@
+# Environment variables
+.env
+
+# Binary files
+ai_tg_writer
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go specific
+*.test
+*.out
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Audio files (downloaded voice messages)
+audio/
+uploads/ 
