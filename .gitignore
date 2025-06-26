@@ -2,7 +2,6 @@
 .env
 
 # Binary files
-ai_tg_writer
 *.exe
 *.dll
 *.so
