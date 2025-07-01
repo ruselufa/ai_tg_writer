@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 
+	"ai_tg_writer/internal/infrastructure/voice"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
 )
@@ -28,7 +30,9 @@ func main() {
 
 	bot.Debug = true
 	log.Printf("Бот %s запущен", bot.Self.UserName)
-	log.Println("Бот запущен")
+
+	// Создаем обработчик голосовых сообщений
+	voiceHandler := voice.NewVoiceHandler(bot)
 
 	// Настраиваем обновления
 	updateConfig := tgbotapi.NewUpdate(0)
@@ -43,11 +47,11 @@ func main() {
 		}
 
 		// Обрабатываем команды и сообщения
-		handleMessage(bot, update.Message)
+		handleMessage(bot, update.Message, voiceHandler)
 	}
 }
 
-func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler) {
 	// Логируем входящие сообщения
 	log.Printf("[%s] %s", message.From.UserName, message.Text)
 
@@ -59,7 +63,7 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	// Обрабатываем голосовые сообщения
 	if message.Voice != nil {
-		handleVoiceMessage(bot, message)
+		handleVoiceMessage(bot, message, voiceHandler)
 		return
 	}
 
@@ -82,20 +86,23 @@ func handleCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	}
 }
 
-func handleVoiceMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func handleVoiceMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler) {
 	// Отправляем сообщение о том, что обрабатываем голосовое
 	processingMsg := tgbotapi.NewMessage(message.Chat.ID, "🎵 Обрабатываю ваше голосовое сообщение...")
 	processingMsg.ReplyToMessageID = message.MessageID
 	bot.Send(processingMsg)
 
-	// TODO: Здесь будет логика обработки голосового сообщения
-	// 1. Скачать файл
-	// 2. Преобразовать в текст
-	// 3. Переписать с помощью ИИ
-	// 4. Отправить результат
+	// Обрабатываем голосовое сообщение
+	resultText, err := voiceHandler.ProcessVoiceMessage(message)
+	if err != nil {
+		log.Printf("Ошибка обработки голосового сообщения: %v", err)
+		errorMsg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при обработке голосового сообщения. Попробуйте еще раз.")
+		bot.Send(errorMsg)
+		return
+	}
 
-	// Пока отправляем заглушку
-	resultMsg := tgbotapi.NewMessage(message.Chat.ID, "🔧 Функция обработки голосовых сообщений находится в разработке. Скоро будет доступна!")
+	// Отправляем результат
+	resultMsg := tgbotapi.NewMessage(message.Chat.ID, resultText)
 	bot.Send(resultMsg)
 }
 

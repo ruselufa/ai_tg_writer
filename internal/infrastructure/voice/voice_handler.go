@@ -9,15 +9,24 @@ import (
 	"path/filepath"
 	"time"
 
+	"ai_tg_writer/internal/infrastructure/deepseek"
+	"ai_tg_writer/internal/infrastructure/whisper"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type VoiceHandler struct {
-	bot *tgbotapi.BotAPI
+	bot             *tgbotapi.BotAPI
+	whisperHandler  *whisper.WhisperHandler
+	deepseekHandler *deepseek.DeepSeekHandler
 }
 
 func NewVoiceHandler(bot *tgbotapi.BotAPI) *VoiceHandler {
-	return &VoiceHandler{bot: bot}
+	return &VoiceHandler{
+		bot:             bot,
+		whisperHandler:  whisper.NewWhisperHandler(),
+		deepseekHandler: deepseek.NewDeepSeekHandler(),
+	}
 }
 
 // DownloadVoiceFile скачивает голосовое сообщение
@@ -70,14 +79,34 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 		return "", err
 	}
 
-	// TODO: Здесь будет логика распознавания речи
-	// Пока возвращаем заглушку
-	recognizedText := "🔧 Распознавание речи находится в разработке. Скоро будет доступно!"
-
-	// Удаляем временный файл
+	// Удаляем временный файл после обработки
 	defer os.Remove(filePath)
 
-	return recognizedText, nil
+	// Отправляем на транскрипцию через Whisper
+	log.Printf("Отправляем файл на транскрипцию: %s", filePath)
+	transcriptionResp, err := vh.whisperHandler.TranscribeAudio(filePath)
+	if err != nil {
+		return "", fmt.Errorf("ошибка отправки на транскрипцию: %v", err)
+	}
+
+	log.Printf("Файл отправлен на транскрипцию, ID: %s, статус: %s", transcriptionResp.FileID, transcriptionResp.Status)
+
+	// Ждем завершения транскрипции (максимум 5 минут)
+	transcribedText, err := vh.whisperHandler.WaitForCompletion(transcriptionResp.FileID, 5*time.Minute)
+	if err != nil {
+		return "", fmt.Errorf("ошибка ожидания транскрипции: %v", err)
+	}
+
+	log.Printf("Транскрипция завершена: %s", transcribedText)
+
+	// Переписываем текст с помощью DeepSeek
+	rewrittenText, err := vh.deepseekHandler.RewriteText(transcribedText)
+	if err != nil {
+		log.Printf("Ошибка переписывания текста: %v, возвращаем исходный текст", err)
+		return transcribedText, nil
+	}
+
+	return rewrittenText, nil
 }
 
 // CleanupOldFiles удаляет старые аудио файлы
