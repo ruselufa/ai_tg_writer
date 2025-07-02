@@ -48,13 +48,13 @@ type TranscriptionMetrics struct {
 func NewWhisperHandler() *WhisperHandler {
 	apiURL := os.Getenv("WHISPER_API_URL")
 	if apiURL == "" {
-		apiURL = "http://localhost:8001"
+		apiURL = "http://localhost:8000"
 	}
 
 	return &WhisperHandler{
 		apiURL: apiURL,
 		client: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 300 * time.Second,
 		},
 	}
 }
@@ -79,6 +79,9 @@ func (wh *WhisperHandler) TranscribeAudio(audioPath string) (*TranscriptionRespo
 	if err != nil {
 		return nil, fmt.Errorf("ошибка копирования файла: %v", err)
 	}
+
+	// Добавляем параметр языка
+	writer.WriteField("language", "ru")
 
 	writer.Close()
 

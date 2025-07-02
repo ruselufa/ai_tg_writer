@@ -99,14 +99,14 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 
 	log.Printf("Транскрипция завершена: %s", transcribedText)
 
-	// Переписываем текст с помощью DeepSeek
-	rewrittenText, err := vh.deepseekHandler.RewriteText(transcribedText)
+	// Создаем красивый пост для Telegram с помощью DeepSeek
+	telegramPost, err := vh.deepseekHandler.CreateTelegramPost(transcribedText)
 	if err != nil {
-		log.Printf("Ошибка переписывания текста: %v, возвращаем исходный текст", err)
+		log.Printf("Ошибка создания поста: %v, возвращаем исходный текст", err)
 		return transcribedText, nil
 	}
 
-	return rewrittenText, nil
+	return telegramPost, nil
 }
 
 // CleanupOldFiles удаляет старые аудио файлы
