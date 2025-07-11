@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 
+	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/voice"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -23,35 +25,52 @@ func main() {
 	}
 
 	// Создаем экземпляр бота
-	bot, err := tgbotapi.NewBotAPI(token)
+	botAPI, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	bot.Debug = true
-	log.Printf("Бот %s запущен", bot.Self.UserName)
+	botAPI.Debug = true
+	log.Printf("Бот %s запущен", botAPI.Self.UserName)
 
-	// Создаем обработчик голосовых сообщений
-	voiceHandler := voice.NewVoiceHandler(bot)
+	// Создаем обработчики
+	customBot := bot.NewBot(botAPI)
+	voiceHandler := voice.NewVoiceHandler(botAPI)
+	stateManager := bot.NewStateManager()
+	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
+	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler)
 
 	// Настраиваем обновления
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 
-	updates := bot.GetUpdatesChan(updateConfig)
+	updates := botAPI.GetUpdatesChan(updateConfig)
 
 	// Обрабатываем сообщения
 	for update := range updates {
+		// Обрабатываем callback от инлайн-кнопок
+		if update.CallbackQuery != nil {
+			inlineHandler.HandleCallback(customBot, update.CallbackQuery)
+			continue
+		}
+
 		if update.Message == nil {
 			continue
 		}
 
-		// Обрабатываем команды и сообщения
-		handleMessage(bot, update.Message, voiceHandler)
+		// Обрабатываем голосовые сообщения через MessageHandler
+		if update.Message.Voice != nil {
+			messageHandler.HandleMessage(customBot, update.Message)
+			continue
+		}
+
+		// Обрабатываем команды и текстовые сообщения
+		handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
 	}
 }
 
-func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler) {
+// handleMessage теперь не обрабатывает голосовые сообщения напрямую
+func handleMessage(bot *bot.Bot, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler, stateManager *bot.StateManager, inlineHandler *bot.InlineHandler) {
 	// Логируем входящие сообщения
 	log.Printf("[%s] %s", message.From.UserName, message.Text)
 
@@ -61,17 +80,11 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, voiceHandler
 		return
 	}
 
-	// Обрабатываем голосовые сообщения
-	if message.Voice != nil {
-		handleVoiceMessage(bot, message, voiceHandler)
-		return
-	}
-
 	// Обрабатываем обычные текстовые сообщения
-	handleTextMessage(bot, message)
+	handleTextMessage(bot, message, stateManager)
 }
 
-func handleCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func handleCommand(bot *bot.Bot, message *tgbotapi.Message) {
 	switch message.Command() {
 	case "start":
 		sendWelcomeMessage(bot, message.Chat.ID)
@@ -86,8 +99,33 @@ func handleCommand(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	}
 }
 
-func handleVoiceMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler) {
-	// Отправляем сообщение о том, что обрабатываем голосовое
+func handleVoiceMessage(bot *bot.Bot, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler, stateManager *bot.StateManager, inlineHandler *bot.InlineHandler) {
+	userID := message.From.ID
+	state := stateManager.GetState(userID)
+
+	// Проверяем, ожидает ли бот голосовое сообщение
+	if !state.WaitingForVoice {
+		// Если не ожидаем голосовое, отправляем стандартную обработку
+		processingMsg := tgbotapi.NewMessage(message.Chat.ID, "🎵 Обрабатываю ваше голосовое сообщение...")
+		processingMsg.ReplyToMessageID = message.MessageID
+		bot.Send(processingMsg)
+
+		// Обрабатываем голосовое сообщение
+		resultText, err := voiceHandler.ProcessVoiceMessage(message)
+		if err != nil {
+			log.Printf("Ошибка обработки голосового сообщения: %v", err)
+			errorMsg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при обработке голосового сообщения. Попробуйте еще раз.")
+			bot.Send(errorMsg)
+			return
+		}
+
+		// Отправляем результат
+		resultMsg := tgbotapi.NewMessage(message.Chat.ID, resultText)
+		bot.Send(resultMsg)
+		return
+	}
+
+	// Если ожидаем голосовое сообщение в рамках создания контента
 	processingMsg := tgbotapi.NewMessage(message.Chat.ID, "🎵 Обрабатываю ваше голосовое сообщение...")
 	processingMsg.ReplyToMessageID = message.MessageID
 	bot.Send(processingMsg)
@@ -101,12 +139,31 @@ func handleVoiceMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message, voiceHa
 		return
 	}
 
-	// Отправляем результат
-	resultMsg := tgbotapi.NewMessage(message.Chat.ID, resultText)
-	bot.Send(resultMsg)
+	// Добавляем голосовое сообщение к состоянию пользователя
+	stateManager.AddVoiceMessage(userID, resultText)
+
+	// Отправляем сообщение с кнопками для продолжения
+	keyboard := bot.CreateContinueKeyboard()
+	msg := tgbotapi.NewMessage(message.Chat.ID, "✅ Принято. Хотите продолжить диктовку или уже начинать создание текста?")
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+
+	// Обновляем состояние
+	stateManager.SetWaitingForVoice(userID, false)
 }
 
-func handleTextMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+func handleTextMessage(bot *bot.Bot, message *tgbotapi.Message, stateManager *bot.StateManager) {
+	userID := message.From.ID
+	state := stateManager.GetState(userID)
+
+	// Если пользователь в процессе создания контента, отправляем подсказку
+	if state.CurrentStep != "idle" {
+		response := tgbotapi.NewMessage(message.Chat.ID,
+			"🎤 Отправьте голосовое сообщение с вашими идеями для создания контента.")
+		bot.Send(response)
+		return
+	}
+
 	// Отправляем информацию о том, что бот принимает голосовые сообщения
 	response := tgbotapi.NewMessage(message.Chat.ID,
 		"👋 Отправьте мне голосовое сообщение, и я перепишу его в красивый текст!\n\n"+
@@ -119,28 +176,16 @@ func handleTextMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	bot.Send(response)
 }
 
-func sendWelcomeMessage(bot *tgbotapi.BotAPI, chatID int64) {
-	text := `🎉 Добро пожаловать в AI Voice Writer!
+func sendWelcomeMessage(bot *bot.Bot, chatID int64) {
+	text := `Привет! Я помогу тебе создать мощный контент из твоих идей. Выбери, что хочешь создать:`
 
-Я помогу вам превратить голосовые сообщения в красивый, структурированный текст.
-
-📝 Как использовать:
-• Отправьте мне голосовое сообщение
-• Я распознаю речь и перепишу её с помощью ИИ
-• Получите готовый текст
-
-💡 Доступные команды:
-/help - Подробная справка
-/profile - Ваш профиль и лимиты
-/subscription - Информация о подписке
-
-🎤 Отправьте голосовое сообщение прямо сейчас!`
-
+	keyboard := bot.CreateMainKeyboard()
 	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
 
-func sendHelpMessage(bot *tgbotapi.BotAPI, chatID int64) {
+func sendHelpMessage(bot *bot.Bot, chatID int64) {
 	text := `📚 Справка по использованию бота
 
 🎤 Голосовые сообщения:
@@ -155,76 +200,43 @@ func sendHelpMessage(bot *tgbotapi.BotAPI, chatID int64) {
 👤 Профиль (/profile):
 • Просмотр текущего тарифа
 • Остаток использований
-• Статистика использования
-
-💳 Подписка (/subscription):
-• Информация о тарифах
-• Способы оплаты
-• Партнёрская программа
-
-❓ Если у вас есть вопросы, обратитесь к администратору.`
+• Статистика использования`
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	bot.Send(msg)
 }
 
-func sendProfileMessage(bot *tgbotapi.BotAPI, chatID int64, userID int64) {
-	// TODO: Получать данные из базы данных
+func sendProfileMessage(bot *bot.Bot, chatID int64, userID int64) {
 	text := `👤 Ваш профиль
 
-🆔 ID пользователя: ` + string(rune(userID)) + `
-
+🆔 ID пользователя: ` + strconv.FormatInt(userID, 10) + `
 📊 Тариф: Бесплатный
-📈 Использовано сегодня: 0/5
-📅 Сброс лимита: каждый день в 00:00
-
-💡 Хотите больше возможностей?
-Используйте /subscription для перехода на премиум!`
+📈 Использовано сегодня: 0/5`
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	bot.Send(msg)
 }
 
-func sendSubscriptionMessage(bot *tgbotapi.BotAPI, chatID int64) {
-	text := `💳 Информация о подписке
+func sendSubscriptionMessage(bot *bot.Bot, chatID int64) {
+	text := `💎 Подписка
 
-🎯 Доступные тарифы:
+📊 Текущий тариф: Бесплатный
+⏰ Срок действия: Бессрочно
 
-🆓 Бесплатный:
-• 5 голосовых сообщений в день
-• Базовое распознавание речи
-• Стандартное переписывание
-
-⭐ Премиум (скоро):
+✨ Премиум тариф:
 • Неограниченное количество сообщений
-• Высокое качество распознавания
-• Продвинутое переписывание с ИИ
-• Приоритетная поддержка
+• Приоритетная обработка
+• Расширенные возможности редактирования
+• Доступ к эксклюзивным функциям
 
-🤝 Партнёрская программа (скоро):
-• Реферальные ссылки
-• Комиссия за привлечённых пользователей
-• Статистика и аналитика
-
-📞 Для подключения премиум тарифа свяжитесь с администратором:
-@admin_username
-
-💡 Следите за обновлениями!`
+💳 Стоимость: 299₽/месяц`
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	bot.Send(msg)
 }
 
-func sendUnknownCommandMessage(bot *tgbotapi.BotAPI, chatID int64) {
-	text := `❓ Неизвестная команда
-
-Доступные команды:
-/start - Начать работу
-/help - Помощь
-/profile - Ваш профиль
-/subscription - Подписка
-
-🎤 Или просто отправьте голосовое сообщение!`
+func sendUnknownCommandMessage(bot *bot.Bot, chatID int64) {
+	text := "❌ Неизвестная команда. Используйте /start для начала работы."
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	bot.Send(msg)

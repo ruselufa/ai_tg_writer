@@ -98,15 +98,33 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 	}
 
 	log.Printf("Транскрипция завершена: %s", transcribedText)
+	return transcribedText, nil
+}
 
-	// Создаем красивый пост для Telegram с помощью DeepSeek
-	telegramPost, err := vh.deepseekHandler.CreateTelegramPost(transcribedText)
+// TranscribeVoiceFile транскрибирует уже скачанный файл
+func (vh *VoiceHandler) TranscribeVoiceFile(filePath string) (string, error) {
+	// Отправляем на транскрипцию через Whisper
+	log.Printf("Отправляем файл на транскрипцию: %s", filePath)
+	transcriptionResp, err := vh.whisperHandler.TranscribeAudio(filePath)
 	if err != nil {
-		log.Printf("Ошибка создания поста: %v, возвращаем исходный текст", err)
-		return transcribedText, nil
+		return "", fmt.Errorf("ошибка отправки на транскрипцию: %v", err)
 	}
 
-	return telegramPost, nil
+	log.Printf("Файл отправлен на транскрипцию, ID: %s, статус: %s", transcriptionResp.FileID, transcriptionResp.Status)
+
+	// Ждем завершения транскрипции (максимум 5 минут)
+	transcribedText, err := vh.whisperHandler.WaitForCompletion(transcriptionResp.FileID, 5*time.Minute)
+	if err != nil {
+		return "", fmt.Errorf("ошибка ожидания транскрипции: %v", err)
+	}
+
+	log.Printf("Транскрипция завершена: %s", transcribedText)
+	return transcribedText, nil
+}
+
+// GenerateTelegramPost генерирует красивый Telegram-пост на основе текста
+func (vh *VoiceHandler) GenerateTelegramPost(text string) (string, error) {
+	return vh.deepseekHandler.CreateTelegramPost(text)
 }
 
 // CleanupOldFiles удаляет старые аудио файлы
