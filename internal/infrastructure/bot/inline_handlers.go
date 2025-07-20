@@ -77,6 +77,10 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleProfile(bot, callback)
 	case "subscription":
 		ih.handleSubscription(bot, callback)
+	case "styling_settings":
+		ih.handleStylingSettings(bot, callback)
+	case "test_formatting":
+		ih.handleTestFormatting(bot, callback)
 	case "no_action":
 		// Игнорируем нажатие на пробел-заглушку
 		return
@@ -263,11 +267,17 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	// Сохраняем сгенерированный текст
 	ih.stateManager.SetLastGeneratedText(userID, postText)
 
+	// Форматируем пост с entities
+	formatter := NewTelegramPostFormatter(state.PostStyling)
+	cleanText, entities := formatter.FormatPost(postText)
+
 	// Создаем новый пост
 	post := Post{
 		ContentType: state.ContentType,
-		Content:     postText,
+		Content:     cleanText,
 		Messages:    results,
+		Entities:    entities,
+		Styling:     state.PostStyling,
 	}
 
 	// Сохраняем пост
@@ -276,12 +286,19 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 
 	// Отправляем результат с кнопками согласования
 	keyboard := bot.CreateApprovalKeyboard()
-	resultMsg := tgbotapi.NewMessage(
+	err = bot.SendFormattedMessageWithKeyboard(
 		callback.Message.Chat.ID,
-		postText,
+		cleanText,
+		entities,
+		keyboard,
 	)
-	resultMsg.ReplyMarkup = keyboard
-	bot.Send(resultMsg)
+	if err != nil {
+		log.Printf("Ошибка отправки форматированного сообщения: %v", err)
+		// Отправляем без форматирования в случае ошибки
+		resultMsg := tgbotapi.NewMessage(callback.Message.Chat.ID, cleanText)
+		resultMsg.ReplyMarkup = keyboard
+		bot.Send(resultMsg)
+	}
 }
 
 // handleAddMore обрабатывает добавление еще голосовых сообщений
@@ -584,20 +601,32 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 		return
 	}
 
+	// Форматируем обновленный пост с entities
+	formatter := NewTelegramPostFormatter(state.PostStyling)
+	cleanText, entities := formatter.FormatPost(updatedText)
+
 	// Обновляем пост
-	state.CurrentPost.Content = updatedText
+	state.CurrentPost.Content = cleanText
+	state.CurrentPost.Entities = entities
 	state.CurrentPost.Messages = append(state.CurrentPost.Messages, results...)
 	ih.stateManager.SetLastGeneratedText(userID, updatedText)
 	ih.stateManager.SetApprovalStatus(userID, "pending")
 
 	// Отправляем обновленный результат с кнопками согласования
 	keyboard := bot.CreateEditApprovalKeyboard()
-	resultMsg := tgbotapi.NewMessage(
+	err = bot.SendFormattedMessageWithKeyboard(
 		callback.Message.Chat.ID,
-		updatedText,
+		cleanText,
+		entities,
+		keyboard,
 	)
-	resultMsg.ReplyMarkup = keyboard
-	bot.Send(resultMsg)
+	if err != nil {
+		log.Printf("Ошибка отправки форматированного сообщения: %v", err)
+		// Отправляем без форматирования в случае ошибки
+		resultMsg := tgbotapi.NewMessage(callback.Message.Chat.ID, cleanText)
+		resultMsg.ReplyMarkup = keyboard
+		bot.Send(resultMsg)
+	}
 }
 
 // processVoiceMessages обрабатывает все голосовые сообщения пользователя
@@ -745,6 +774,94 @@ func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.Callbac
 		text,
 	)
 
+	bot.Send(msg)
+}
+
+// handleStylingSettings обрабатывает настройки стилизации
+func (ih *InlineHandler) handleStylingSettings(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+	state := ih.stateManager.GetState(userID)
+	styling := state.PostStyling
+
+	text := `🎨 Настройки стилизации постов
+
+Текущие настройки:
+• Жирный текст: ` + ih.formatBool(styling.UseBold) + `
+• Курсив: ` + ih.formatBool(styling.UseItalic) + `
+• Зачеркивание: ` + ih.formatBool(styling.UseStrikethrough) + `
+• Код: ` + ih.formatBool(styling.UseCode) + `
+• Ссылки: ` + ih.formatBool(styling.UseLinks) + `
+• Хештеги: ` + ih.formatBool(styling.UseHashtags) + `
+• Упоминания: ` + ih.formatBool(styling.UseMentions) + `
+• Подчеркивание: ` + ih.formatBool(styling.UseUnderline) + `
+• Блоки кода: ` + ih.formatBool(styling.UsePre) + `
+
+Выберите, что хотите изменить:`
+
+	keyboard := bot.CreateStylingSettingsKeyboard()
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		text,
+	)
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// formatBool форматирует булево значение для отображения
+func (ih *InlineHandler) formatBool(value bool) string {
+	if value {
+		return "✅ Включено"
+	}
+	return "❌ Отключено"
+}
+
+// handleTestFormatting обрабатывает тест форматирования
+func (ih *InlineHandler) handleTestFormatting(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	// Тестовый текст с разными типами разметки
+	testText := `*🔥 Тест форматирования Telegram* 🔥
+
+Этот текст демонстрирует различные возможности форматирования в Telegram:
+
+*Жирный текст* - для заголовков и важных моментов
+_Курсив_ - для акцентов и выделения
+~Зачеркнутый текст~ - для исправлений
+` + "`" + `код` + "`" + ` - для технических терминов
+
+🔹 *Списки с разметкой:*
+✔️ _Пункт 1_ - с курсивом
+✔️ *Пункт 2* - с жирным
+✔️ ` + "`" + `Пункт 3` + "`" + ` - с кодом
+
+🔗 *Ссылки:*
+[Telegram API](https://core.telegram.org/api/entities)
+
+#Тест #Форматирование #Telegram`
+
+	// Создаем форматтер с настройками по умолчанию
+	styling := DefaultPostStyling()
+	formatter := NewTelegramPostFormatter(styling)
+
+	// Парсим Markdown в entities напрямую (без FormatPost)
+	cleanText, entities := formatter.ParseMarkdownToEntities(testText)
+
+	// Отправляем с форматированием
+	err := bot.SendFormattedMessage(callback.Message.Chat.ID, cleanText, entities)
+	if err != nil {
+		log.Printf("Ошибка отправки тестового сообщения: %v", err)
+		// Отправляем без форматирования в случае ошибки
+		msg := tgbotapi.NewMessage(callback.Message.Chat.ID, testText)
+		bot.Send(msg)
+	}
+
+	// Отправляем сообщение об успехе
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"✅ Тестовое сообщение с форматированием отправлено! Проверьте чат выше.",
+	)
+	keyboard := bot.CreateMainKeyboard()
+	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
 

@@ -2,9 +2,11 @@ package bot
 
 // Post представляет собой созданный пост
 type Post struct {
-	ContentType string   // тип контента (telegram_post, reels_script, youtube_script, instagram_post)
-	Content     string   // текст поста
-	Messages    []string // голосовые сообщения, использованные для создания поста
+	ContentType string          // тип контента (telegram_post, reels_script, youtube_script, instagram_post)
+	Content     string          // текст поста
+	Messages    []string        // голосовые сообщения, использованные для создания поста
+	Entities    []MessageEntity // Telegram entities для форматирования
+	Styling     PostStyling     // настройки стилизации, использованные при создании
 }
 
 // UserState хранит состояние пользователя
@@ -20,6 +22,7 @@ type UserState struct {
 	PendingEdits      map[string]*VoiceTranscription // голосовые сообщения для правок в процессе транскрипции
 	ApprovalStatus    string                         // статус согласования (pending, approved, editing)
 	LastGeneratedText string                         // последний сгенерированный текст для правок
+	PostStyling       PostStyling                    // настройки стилизации для постов
 }
 
 type VoiceTranscription struct {
@@ -57,6 +60,7 @@ func (sm *StateManager) GetState(userID int64) *UserState {
 			PendingEdits:      make(map[string]*VoiceTranscription),
 			ApprovalStatus:    "pending",
 			LastGeneratedText: "",
+			PostStyling:       DefaultPostStyling(),
 		}
 		sm.states[userID] = state
 	} else {
@@ -68,6 +72,10 @@ func (sm *StateManager) GetState(userID int64) *UserState {
 		}
 		if state.EditMessages == nil {
 			state.EditMessages = make([]string, 0)
+		}
+		// Устанавливаем настройки стилизации по умолчанию, если их нет
+		if state.PostStyling == (PostStyling{}) {
+			state.PostStyling = DefaultPostStyling()
 		}
 	}
 	return state
@@ -238,4 +246,49 @@ func (sm *StateManager) SetLastGeneratedText(userID int64, text string) {
 func (sm *StateManager) GetLastGeneratedText(userID int64) string {
 	state := sm.GetState(userID)
 	return state.LastGeneratedText
+}
+
+// SetPostStyling устанавливает настройки стилизации для пользователя
+func (sm *StateManager) SetPostStyling(userID int64, styling PostStyling) {
+	state := sm.GetState(userID)
+	state.PostStyling = styling
+}
+
+// GetPostStyling возвращает настройки стилизации пользователя
+func (sm *StateManager) GetPostStyling(userID int64) PostStyling {
+	state := sm.GetState(userID)
+	return state.PostStyling
+}
+
+// UpdatePostStyling обновляет отдельные настройки стилизации
+func (sm *StateManager) UpdatePostStyling(userID int64, updates map[string]bool) {
+	state := sm.GetState(userID)
+
+	if updates["use_bold"] {
+		state.PostStyling.UseBold = updates["use_bold"]
+	}
+	if updates["use_italic"] {
+		state.PostStyling.UseItalic = updates["use_italic"]
+	}
+	if updates["use_strikethrough"] {
+		state.PostStyling.UseStrikethrough = updates["use_strikethrough"]
+	}
+	if updates["use_code"] {
+		state.PostStyling.UseCode = updates["use_code"]
+	}
+	if updates["use_links"] {
+		state.PostStyling.UseLinks = updates["use_links"]
+	}
+	if updates["use_hashtags"] {
+		state.PostStyling.UseHashtags = updates["use_hashtags"]
+	}
+	if updates["use_mentions"] {
+		state.PostStyling.UseMentions = updates["use_mentions"]
+	}
+	if updates["use_underline"] {
+		state.PostStyling.UseUnderline = updates["use_underline"]
+	}
+	if updates["use_pre"] {
+		state.PostStyling.UsePre = updates["use_pre"]
+	}
 }

@@ -75,11 +75,15 @@ func (b *Bot) CreateMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
 			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help"),
-			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 			tgbotapi.NewInlineKeyboardButtonData("💎 Моя подписка", "subscription"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🧪 Тест форматирования", "test_formatting"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(" ", "no_action"),
@@ -111,6 +115,117 @@ func (b *Bot) CreatePostActionKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "edit_post"),
 			tgbotapi.NewInlineKeyboardButtonData("✅ Сохранить", "save_post"),
+		),
+	)
+}
+
+// SendFormattedMessage отправляет сообщение с форматированием
+func (b *Bot) SendFormattedMessage(chatID int64, text string, entities []MessageEntity) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+
+	// Конвертируем наши entities в формат tgbotapi
+	var tgbotEntities []tgbotapi.MessageEntity
+	for _, entity := range entities {
+		tgbotEntity := tgbotapi.MessageEntity{
+			Type:   entity.Type,
+			Offset: entity.Offset,
+			Length: entity.Length,
+		}
+
+		if entity.URL != "" {
+			tgbotEntity.URL = entity.URL
+		}
+
+		if entity.User != nil {
+			tgbotEntity.User = &tgbotapi.User{
+				ID:           entity.User.ID,
+				IsBot:        entity.User.IsBot,
+				FirstName:    entity.User.FirstName,
+				LastName:     entity.User.LastName,
+				UserName:     entity.User.Username,
+				LanguageCode: entity.User.LanguageCode,
+			}
+		}
+
+		if entity.Language != "" {
+			tgbotEntity.Language = entity.Language
+		}
+
+		tgbotEntities = append(tgbotEntities, tgbotEntity)
+	}
+
+	msg.Entities = tgbotEntities
+
+	_, err := b.Send(msg)
+	return err
+}
+
+// SendFormattedMessageWithKeyboard отправляет форматированное сообщение с клавиатурой
+func (b *Bot) SendFormattedMessageWithKeyboard(chatID int64, text string, entities []MessageEntity, keyboard tgbotapi.InlineKeyboardMarkup) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = keyboard
+
+	// Конвертируем наши entities в формат tgbotapi
+	var tgbotEntities []tgbotapi.MessageEntity
+	for _, entity := range entities {
+		tgbotEntity := tgbotapi.MessageEntity{
+			Type:   entity.Type,
+			Offset: entity.Offset,
+			Length: entity.Length,
+		}
+
+		if entity.URL != "" {
+			tgbotEntity.URL = entity.URL
+		}
+
+		if entity.User != nil {
+			tgbotEntity.User = &tgbotapi.User{
+				ID:           entity.User.ID,
+				IsBot:        entity.User.IsBot,
+				FirstName:    entity.User.FirstName,
+				LastName:     entity.User.LastName,
+				UserName:     entity.User.Username,
+				LanguageCode: entity.User.LanguageCode,
+			}
+		}
+
+		if entity.Language != "" {
+			tgbotEntity.Language = entity.Language
+		}
+
+		tgbotEntities = append(tgbotEntities, tgbotEntity)
+	}
+
+	msg.Entities = tgbotEntities
+
+	_, err := b.Send(msg)
+	return err
+}
+
+// CreateStylingSettingsKeyboard создает клавиатуру для настроек стилизации
+func (b *Bot) CreateStylingSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔤 Жирный текст", "toggle_bold"),
+			tgbotapi.NewInlineKeyboardButtonData("📝 Курсив", "toggle_italic"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ Зачеркивание", "toggle_strikethrough"),
+			tgbotapi.NewInlineKeyboardButtonData("💻 Код", "toggle_code"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔗 Ссылки", "toggle_links"),
+			tgbotapi.NewInlineKeyboardButtonData("# Хештеги", "toggle_hashtags"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("@ Упоминания", "toggle_mentions"),
+			tgbotapi.NewInlineKeyboardButtonData("📋 Подчеркивание", "toggle_underline"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📦 Блоки кода", "toggle_pre"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
 		),
 	)
 }
