@@ -1,19 +1,28 @@
 package bot
 
 import (
+	"ai_tg_writer/internal/infrastructure/database"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Bot представляет собой обертку над tgbotapi.BotAPI с дополнительной функциональностью
 type Bot struct {
-	*tgbotapi.BotAPI
+	API          *tgbotapi.BotAPI
+	StateManager *StateManager
+	DB           *database.DB
 }
 
-// NewBot создает новый экземпляр Bot
-func NewBot(api *tgbotapi.BotAPI) *Bot {
+func NewBot(api *tgbotapi.BotAPI, db *database.DB) *Bot {
 	return &Bot{
-		BotAPI: api,
+		API: api,
+		DB:  db,
 	}
+}
+
+// Send отправляет сообщение через API бота
+func (b *Bot) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	return b.API.Send(c)
 }
 
 // CreateApprovalKeyboard создает клавиатуру для согласования результата

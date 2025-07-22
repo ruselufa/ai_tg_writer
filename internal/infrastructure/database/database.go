@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
 )
 
 type DB struct {
@@ -58,7 +62,17 @@ func NewConnection() (*DB, error) {
 		return nil, err
 	}
 
-	log.Println("Успешно подключились к базе данных")
+	// Применяем миграции
+	migrationsDir := filepath.Join("migrations")
+	if err := goose.SetDialect("postgres"); err != nil {
+		return nil, fmt.Errorf("ошибка установки диалекта: %v", err)
+	}
+
+	if err := goose.Up(db, migrationsDir); err != nil {
+		return nil, fmt.Errorf("ошибка применения миграций: %v", err)
+	}
+
+	log.Println("Успешно подключились к базе данных и применили миграции")
 	return &DB{db}, nil
 }
 
@@ -66,9 +80,10 @@ func NewConnection() (*DB, error) {
 func (db *DB) InitTables() error {
 	// Таблица пользователей
 	createUsersTable := `
-	CREATE TABLE IF NOT EXISTS users (
-		id BIGINT PRIMARY KEY,
-		username VARCHAR(255),
+    CREATE TABLE IF NOT EXISTS users (
+        id BIGINT PRIMARY KEY,
+        username VARCHAR(255),
+        is_admin BOOLEAN DEFAULT FALSE,
 		first_name VARCHAR(255),
 		last_name VARCHAR(255),
 		tariff VARCHAR(50) DEFAULT 'free',
@@ -207,6 +222,35 @@ func (db *DB) GetUserTariff(userID int64) (string, error) {
 func (db *DB) UpdateUserTariff(userID int64, tariff string) error {
 	_, err := db.Exec(`UPDATE users SET tariff = $1 WHERE id = $2`, tariff, userID)
 	return err
+}
+
+// IsAdmin проверяет, является ли пользователь администратором
+func (db *DB) IsAdmin(userID int64) (bool, error) {
+	// Получаем список ID администраторов из переменной окружения
+	adminIDs := os.Getenv("ADMIN_TELEGRAM_IDS")
+	if adminIDs == "" {
+		return false, nil
+	}
+
+	// Разбиваем строку на отдельные ID
+	idStrs := strings.Split(adminIDs, ",")
+	for _, idStr := range idStrs {
+		idStr = strings.TrimSpace(idStr)
+		if idStr == "" {
+			continue
+		}
+
+		// Парсим ID и сравниваем
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		if id == userID {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // Вспомогательные функции

@@ -1,5 +1,11 @@
 package bot
 
+import (
+	"ai_tg_writer/internal/infrastructure/database"
+	"log"
+	"time"
+)
+
 // Post представляет собой созданный пост
 type Post struct {
 	ContentType string          // тип контента (telegram_post, reels_script, youtube_script, instagram_post)
@@ -23,6 +29,11 @@ type UserState struct {
 	ApprovalStatus    string                         // статус согласования (pending, approved, editing)
 	LastGeneratedText string                         // последний сгенерированный текст для правок
 	PostStyling       PostStyling                    // настройки стилизации для постов
+	Tariff            string                         // тариф пользователя (free, premium)
+	UsageCount        int                            // количество использований
+	LastUsage         time.Time                      // дата последнего использования
+	ReferralCode      string                         // реферальный код пользователя
+	ReferredBy        *int64                         // ID пользователя, который пригласил
 }
 
 type VoiceTranscription struct {
@@ -37,12 +48,14 @@ type VoiceTranscription struct {
 // StateManager управляет состояниями пользователей
 type StateManager struct {
 	states map[int64]*UserState
+	db     *database.DB // Добавляем подключение к БД
 }
 
 // NewStateManager создает новый менеджер состояний
-func NewStateManager() *StateManager {
+func NewStateManager(db *database.DB) *StateManager {
 	return &StateManager{
 		states: make(map[int64]*UserState),
+		db:     db,
 	}
 }
 
@@ -50,6 +63,7 @@ func NewStateManager() *StateManager {
 func (sm *StateManager) GetState(userID int64) *UserState {
 	state, exists := sm.states[userID]
 	if !exists {
+		// Создаем новое состояние
 		state = &UserState{
 			CurrentStep:       "idle",
 			WaitingForVoice:   false,
@@ -62,8 +76,25 @@ func (sm *StateManager) GetState(userID int64) *UserState {
 			LastGeneratedText: "",
 			PostStyling:       DefaultPostStyling(),
 		}
+
+		// Загружаем данные из БД
+		user, err := sm.db.GetOrCreateUser(userID, "", "", "")
+		if err == nil {
+			state.Tariff = user.Tariff
+			state.UsageCount = user.UsageCount
+			state.LastUsage = user.LastUsage
+			state.ReferralCode = user.ReferralCode
+			if user.ReferredBy != nil {
+				referredBy := *user.ReferredBy
+				state.ReferredBy = &referredBy
+			}
+		} else {
+			log.Printf("Ошибка загрузки пользователя из БД: %v", err)
+		}
+
 		sm.states[userID] = state
 	} else {
+		// Инициализация при необходимости
 		if state.PendingVoices == nil {
 			state.PendingVoices = make(map[string]*VoiceTranscription)
 		}
@@ -73,7 +104,6 @@ func (sm *StateManager) GetState(userID int64) *UserState {
 		if state.EditMessages == nil {
 			state.EditMessages = make([]string, 0)
 		}
-		// Устанавливаем настройки стилизации по умолчанию, если их нет
 		if state.PostStyling == (PostStyling{}) {
 			state.PostStyling = DefaultPostStyling()
 		}
@@ -85,6 +115,44 @@ func (sm *StateManager) GetState(userID int64) *UserState {
 func (sm *StateManager) UpdateStep(userID int64, step string) {
 	state := sm.GetState(userID)
 	state.CurrentStep = step
+}
+
+// IncrementUsage увеличивает счетчик использований
+func (sm *StateManager) IncrementUsage(userID int64) error {
+	state := sm.GetState(userID)
+	state.UsageCount++
+
+	// Обновляем БД
+	err := sm.db.IncrementUsage(userID)
+	if err != nil {
+		log.Printf("Ошибка обновления счетчика: %v", err)
+		return err
+	}
+	return nil
+}
+
+// CheckLimit проверяет лимит использования
+func (sm *StateManager) CheckLimit(userID int64) (bool, error) {
+	state := sm.GetState(userID)
+
+	// Проверяем лимит в зависимости от тарифа
+	var dailyLimit int
+	switch state.Tariff {
+	case "free":
+		dailyLimit = 5
+	case "premium":
+		dailyLimit = 999999
+	default:
+		dailyLimit = 5
+	}
+
+	// Получаем текущее использование за сегодня
+	usage, err := sm.db.GetUserUsageToday(userID)
+	if err != nil {
+		return false, err
+	}
+
+	return usage < dailyLimit, nil
 }
 
 // SetContentType устанавливает тип контента

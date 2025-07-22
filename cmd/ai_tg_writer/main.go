@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"ai_tg_writer/internal/infrastructure/bot"
+	"ai_tg_writer/internal/infrastructure/database" // Добавляем импорт
 	"ai_tg_writer/internal/infrastructure/voice"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -33,10 +34,21 @@ func main() {
 	botAPI.Debug = true
 	log.Printf("Бот %s запущен", botAPI.Self.UserName)
 
+	// Инициализируем подключение к базе данных
+	db, err := database.NewConnection()
+	if err != nil {
+		log.Fatalf("Ошибка подключения к базе данных: %v", err)
+	}
+
+	// Инициализируем таблицы
+	if err := db.InitTables(); err != nil {
+		log.Fatalf("Ошибка инициализации таблиц: %v", err)
+	}
+
 	// Создаем обработчики
-	customBot := bot.NewBot(botAPI)
+	customBot := bot.NewBot(botAPI, db)
 	voiceHandler := voice.NewVoiceHandler(botAPI)
-	stateManager := bot.NewStateManager()
+	stateManager := bot.NewStateManager(db)
 	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
 	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler)
 
@@ -94,6 +106,8 @@ func handleCommand(bot *bot.Bot, message *tgbotapi.Message) {
 		sendProfileMessage(bot, message.Chat.ID, message.From.ID)
 	case "subscription":
 		sendSubscriptionMessage(bot, message.Chat.ID)
+	case "admin":
+		handleAdminCommand(bot, message)
 	default:
 		sendUnknownCommandMessage(bot, message.Chat.ID)
 	}
@@ -239,5 +253,25 @@ func sendUnknownCommandMessage(bot *bot.Bot, chatID int64) {
 	text := "❌ Неизвестная команда. Используйте /start для начала работы."
 
 	msg := tgbotapi.NewMessage(chatID, text)
+	bot.Send(msg)
+}
+
+func handleAdminCommand(bot *bot.Bot, message *tgbotapi.Message) {
+	// Проверяем права администратора
+	isAdmin, err := bot.DB.IsAdmin(message.From.ID)
+	if err != nil {
+		log.Printf("Ошибка проверки прав администратора: %v", err)
+		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при проверке прав доступа")
+		bot.Send(msg)
+		return
+	}
+
+	if !isAdmin {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "⛔ У вас нет прав администратора")
+		bot.Send(msg)
+		return
+	}
+
+	msg := tgbotapi.NewMessage(message.Chat.ID, "🛠 Админ-панель\n\nДоступные команды:\n/reset_limits [user_id] - Сбросить лимиты пользователя\n/add_admin [user_id] - Добавить администратора")
 	bot.Send(msg)
 }

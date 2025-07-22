@@ -31,6 +31,20 @@ func (mh *MessageHandler) HandleMessage(bot *Bot, message *tgbotapi.Message) {
 		return
 	}
 
+	// Проверяем лимиты использования
+	withinLimit, err := mh.stateManager.CheckLimit(userID)
+	if err != nil {
+		log.Printf("Ошибка проверки лимита: %v", err)
+		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при проверке лимита. Попробуйте позже.")
+		bot.Send(msg)
+		return
+	}
+	if !withinLimit {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Вы превысили дневной лимит использования. Для увеличения лимита перейдите на премиум тариф (/subscription).")
+		bot.Send(msg)
+		return
+	}
+
 	// Обрабатываем голосовое сообщение
 	if message.Voice != nil {
 		mh.handleVoiceMessage(bot, message)
@@ -53,6 +67,12 @@ func (mh *MessageHandler) handleVoiceMessage(bot *Bot, message *tgbotapi.Message
 		msg.ReplyToMessageID = message.MessageID
 		bot.Send(msg)
 		return
+	}
+
+	// Увеличиваем счетчик использований
+	err = mh.stateManager.IncrementUsage(userID)
+	if err != nil {
+		log.Printf("Ошибка увеличения счетчика: %v", err)
 	}
 
 	// Определяем, в каком режиме мы находимся
