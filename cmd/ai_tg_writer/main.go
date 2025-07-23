@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -15,49 +16,52 @@ import (
 
 func main() {
 	// Загружаем переменные окружения
+	fmt.Println("Загружаем переменные окружения")
 	if err := godotenv.Load(); err != nil {
 		log.Println("Файл .env не найден, используем системные переменные")
 	}
 
 	// Получаем токен бота из переменных окружения
+	fmt.Println("Получаем токен бота из переменных окружения")
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		log.Fatal("TELEGRAM_BOT_TOKEN не установлен")
 	}
-
+	fmt.Println("Токен бота: ", token)
 	// Создаем экземпляр бота
 	botAPI, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	fmt.Println("Экземпляр бота создан")
 	botAPI.Debug = true
 	log.Printf("Бот %s запущен", botAPI.Self.UserName)
 
 	// Инициализируем подключение к базе данных
+	fmt.Println("Инициализируем подключение к базе данных")
 	db, err := database.NewConnection()
 	if err != nil {
 		log.Fatalf("Ошибка подключения к базе данных: %v", err)
 	}
-
+	fmt.Println("Подключение к базе данных успешно")
 	// Инициализируем таблицы
 	if err := db.InitTables(); err != nil {
 		log.Fatalf("Ошибка инициализации таблиц: %v", err)
 	}
-
+	fmt.Println("Таблицы инициализированы")
 	// Создаем обработчики
 	customBot := bot.NewBot(botAPI, db)
 	voiceHandler := voice.NewVoiceHandler(botAPI)
 	stateManager := bot.NewStateManager(db)
 	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
 	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler)
-
+	fmt.Println("Обработчики созданы")
 	// Настраиваем обновления
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
-
+	fmt.Println("Настройки обновлений установлены")
 	updates := botAPI.GetUpdatesChan(updateConfig)
-
+	fmt.Println("Обновления получены")
 	// Обрабатываем сообщения
 	for update := range updates {
 		// Обрабатываем callback от инлайн-кнопок
@@ -65,17 +69,17 @@ func main() {
 			inlineHandler.HandleCallback(customBot, update.CallbackQuery)
 			continue
 		}
-
+		fmt.Println("Обработка сообщения")
 		if update.Message == nil {
 			continue
 		}
-
+		fmt.Println("Обработка голосового сообщения")
 		// Обрабатываем голосовые сообщения через MessageHandler
 		if update.Message.Voice != nil {
 			messageHandler.HandleMessage(customBot, update.Message)
 			continue
 		}
-
+		fmt.Println("Обработка текстового сообщения")
 		// Обрабатываем команды и текстовые сообщения
 		handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
 	}
@@ -85,13 +89,13 @@ func main() {
 func handleMessage(bot *bot.Bot, message *tgbotapi.Message, voiceHandler *voice.VoiceHandler, stateManager *bot.StateManager, inlineHandler *bot.InlineHandler) {
 	// Логируем входящие сообщения
 	log.Printf("[%s] %s", message.From.UserName, message.Text)
-
+	fmt.Println("Обработка команды")
 	// Обрабатываем команды
 	if message.IsCommand() {
 		handleCommand(bot, message)
 		return
 	}
-
+	fmt.Println("Обработка текстового сообщения")
 	// Обрабатываем обычные текстовые сообщения
 	handleTextMessage(bot, message, stateManager)
 }

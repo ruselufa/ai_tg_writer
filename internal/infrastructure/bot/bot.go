@@ -84,19 +84,19 @@ func (b *Bot) CreateMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
-			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help"),
+			tgbotapi.NewInlineKeyboardButtonData("---------------", "no_action"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 			tgbotapi.NewInlineKeyboardButtonData("💎 Моя подписка", "subscription"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🧪 Тест форматирования", "test_formatting"),
+			// tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
+			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help"),
 		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(" ", "no_action"),
-		),
+		// tgbotapi.NewInlineKeyboardRow(
+		// 	tgbotapi.NewInlineKeyboardButtonData("🧪 Тест форматирования", "test_formatting"),
+		// ),
 	)
 }
 
@@ -114,6 +114,12 @@ func (b *Bot) CreateContentTypeKeyboard() tgbotapi.InlineKeyboardMarkup {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("✅ Создать пост в Instagram", "create_post_instagram"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("---------------", "no_action"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
 		),
 	)
 }
