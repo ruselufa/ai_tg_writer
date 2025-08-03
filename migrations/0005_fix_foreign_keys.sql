@@ -1,5 +1,9 @@
 -- +goose Up
--- Таблица голосовых сообщений
+-- Удаляем старые таблицы если они существуют
+DROP TABLE IF EXISTS usage_stats;
+DROP TABLE IF EXISTS voice_messages;
+
+-- Создаем таблицы с правильными внешними ключами
 CREATE TABLE IF NOT EXISTS voice_messages (
     id SERIAL PRIMARY KEY,
     user_id BIGINT REFERENCES users(id),
@@ -11,7 +15,6 @@ CREATE TABLE IF NOT EXISTS voice_messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Таблица статистики использования
 CREATE TABLE IF NOT EXISTS usage_stats (
     id SERIAL PRIMARY KEY,
     user_id BIGINT REFERENCES users(id),
