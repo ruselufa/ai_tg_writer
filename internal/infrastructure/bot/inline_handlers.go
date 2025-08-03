@@ -768,12 +768,20 @@ func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.Callbac
 
 💳 Стоимость: 299₽/месяц`
 
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💰 Купить подписку", "buy_premium"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		text,
 	)
-
+	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
 

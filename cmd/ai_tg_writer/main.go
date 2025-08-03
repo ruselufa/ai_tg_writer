@@ -248,8 +248,16 @@ func sendSubscriptionMessage(bot *bot.Bot, chatID int64) {
 • Доступ к эксклюзивным функциям
 
 💳 Стоимость: 299₽/месяц`
-
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💰 Купить подписку", "buy_premium"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
 	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
 
