@@ -727,11 +727,18 @@ func (ih *InlineHandler) handleHelp(bot *Bot, callback *tgbotapi.CallbackQuery) 
 • Можно отправлять несколько голосовых подряд
 • Бот автоматически объединит все сообщения`
 
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
+
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		text,
 	)
+	msg.ReplyMarkup = &keyboard
 
 	bot.Send(msg)
 }
@@ -744,11 +751,18 @@ func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuer
 📊 Тариф: Бесплатный
 📈 Использовано сегодня: 0/5`
 
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
+
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		text,
 	)
+	msg.ReplyMarkup = &keyboard
 
 	bot.Send(msg)
 }
