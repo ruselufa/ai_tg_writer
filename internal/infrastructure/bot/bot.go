@@ -1,7 +1,9 @@
 package bot
 
 import (
+	"fmt"
 	"ai_tg_writer/internal/infrastructure/database"
+	"ai_tg_writer/internal/service"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -11,12 +13,21 @@ type Bot struct {
 	API          *tgbotapi.BotAPI
 	StateManager *StateManager
 	DB           *database.DB
+	SubscriptionService *service.SubscriptionService
 }
 
 func NewBot(api *tgbotapi.BotAPI, db *database.DB) *Bot {
 	return &Bot{
 		API: api,
 		DB:  db,
+	}
+}
+
+func NewBotWithSubscriptionService(api *tgbotapi.BotAPI, db *database.DB, subscriptionService *service.SubscriptionService) *Bot {
+	return &Bot{
+		API:                api,
+		DB:                 db,
+		SubscriptionService: subscriptionService,
 	}
 }
 
@@ -243,4 +254,13 @@ func (b *Bot) CreateStylingSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
 		),
 	)
+}
+
+// CreateSubscriptionLink создает ссылку на оплату подписки
+func (b *Bot) CreateSubscriptionLink(userID int64, tariff string, amount float64) (string, error) {
+	if b.SubscriptionService == nil {
+		return "", fmt.Errorf("subscription service not initialized")
+	}
+	
+	return b.SubscriptionService.CreateSubscriptionLink(userID, tariff, amount)
 }

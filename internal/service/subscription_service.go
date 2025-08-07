@@ -2,17 +2,16 @@ package service
 
 import (
 	"ai_tg_writer/internal/domain"
-	"ai_tg_writer/internal/infrastructure/prodamus_payments"
 	"fmt"
 	"time"
 )
 
 type SubscriptionService struct {
 	repo            domain.SubscriptionRepository
-	prodamusHandler *prodamus_payments.ProdamusHandler
+	prodamusHandler interface{} // Временно используем interface{} для совместимости
 }
 
-func NewSubscriptionService(repo domain.SubscriptionRepository, prodamusHandler *prodamus_payments.ProdamusHandler) *SubscriptionService {
+func NewSubscriptionService(repo domain.SubscriptionRepository, prodamusHandler interface{}) *SubscriptionService {
 	return &SubscriptionService{
 		repo:            repo,
 		prodamusHandler: prodamusHandler,
@@ -66,10 +65,11 @@ func (s *SubscriptionService) CancelSubscription(userID int64) error {
 		return fmt.Errorf("subscription not found")
 	}
 
-	// Отменяем подписку в Prodamus
-	if err := s.prodamusHandler.SetSubscriptionActivity(subscription.SubscriptionID, userID, false); err != nil {
-		return fmt.Errorf("error cancelling subscription in Prodamus: %w", err)
-	}
+	// Временно отключаем интеграцию с Prodamus
+	// TODO: Добавить интеграцию с новым платежным модулем
+	// if err := s.prodamusHandler.SetSubscriptionActivity(subscription.SubscriptionID, userID, false); err != nil {
+	// 	return fmt.Errorf("error cancelling subscription in Prodamus: %w", err)
+	// }
 
 	// Отменяем подписку в базе данных
 	if err := s.repo.Cancel(userID); err != nil {
@@ -128,9 +128,9 @@ func (s *SubscriptionService) GetUserTariff(userID int64) (string, error) {
 
 // CreateSubscriptionLink создает ссылку для оплаты подписки
 func (s *SubscriptionService) CreateSubscriptionLink(userID int64, tariff string, amount float64) (string, error) {
-	subscriptionID := 1 // ID подписки в Prodamus
-
-	return s.prodamusHandler.CreateSubscriptionLink(userID, tariff, amount, subscriptionID)
+	// Временно возвращаем заглушку
+	// TODO: Добавить интеграцию с новым платежным модулем
+	return "https://example.com/payment?user_id=" + fmt.Sprintf("%d", userID), nil
 }
 
 // GetAvailableTariffs возвращает доступные тарифы
@@ -139,7 +139,7 @@ func (s *SubscriptionService) GetAvailableTariffs() []domain.Tariff {
 		{
 			ID:          "premium",
 			Name:        "Premium",
-			Price:       299.0,
+			Price:       990.0,
 			Period:      "month",
 			Description: "Премиум подписка с неограниченными возможностями",
 			Features: []string{

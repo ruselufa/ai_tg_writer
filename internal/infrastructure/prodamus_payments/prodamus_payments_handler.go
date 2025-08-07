@@ -4,9 +4,11 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -96,17 +98,47 @@ func NewProdamusHandler(apiKey, apiURL, webhookSecret string) *ProdamusHandler {
 func (h *ProdamusHandler) CreateSubscriptionLink(userID int64, tariff string, amount float64, subscriptionID int) (string, error) {
 	data := url.Values{}
 
-	data.Set("order_id", fmt.Sprintf("sub_%d_%s", userID, time.Now().Format("20060102150405")))
-	data.Set("customer_phone", "+79999999999")     // Замените на реальный номер
-	data.Set("customer_email", "user@example.com") // Замените на реальный email
-	data.Set("subscription", strconv.Itoa(subscriptionID))
+	// Генерируем уникальный order_id
+	orderID := fmt.Sprintf("sub_%d_%s", userID, time.Now().Format("20060102150405"))
+	
+	data.Set("order_id", orderID)
 	data.Set("do", "link")
-	data.Set("urlSuccess", "https://your-bot-domain.com/success")
-	data.Set("urlReturn", "https://your-bot-domain.com/return")
-	data.Set("urlNotification", "https://your-bot-domain.com/webhook")
+	data.Set("urlSuccess", "https://aiwhisper.ru/payment/success")
+	data.Set("urlReturn", "https://aiwhisper.ru/payment/fail")
+	data.Set("urlNotification", "https://aiwhisper.ru/payment/webhook")
+	
+	// Добавляем продукт для подписки
+	data.Set("products[0][name]", "Премиум подписка")
+	data.Set("products[0][price]", fmt.Sprintf("%.2f", amount))
+	data.Set("products[0][quantity]", "1")
 
 	// Создаем подпись
-	signature := h.createSignature(data)
+	signature := h.CreateSignature(data)
+	data.Set("signature", signature)
+
+	// Формируем URL
+	paymentURL := fmt.Sprintf("%s?%s", h.APIURL, data.Encode())
+
+	return paymentURL, nil
+}
+
+// CreatePaymentLink создает ссылку для разового платежа
+func (h *ProdamusHandler) CreatePaymentLink(userID int64, amount float64, description string) (string, error) {
+	data := url.Values{}
+
+	// Генерируем уникальный order_id
+	orderID := fmt.Sprintf("pay_%d_%s", userID, time.Now().Format("20060102150405"))
+	
+	data.Set("order_id", orderID)
+	data.Set("amount", fmt.Sprintf("%.2f", amount))
+	data.Set("description", description)
+	data.Set("do", "link")
+	data.Set("urlSuccess", "https://aiwhisper.ru/payment/success")
+	data.Set("urlReturn", "https://aiwhisper.ru/payment/fail")
+	data.Set("urlNotification", "https://aiwhisper.ru/payment/webhook")
+
+	// Создаем подпись
+	signature := h.CreateSignature(data)
 	data.Set("signature", signature)
 
 	// Формируем URL
@@ -117,8 +149,14 @@ func (h *ProdamusHandler) CreateSubscriptionLink(userID int64, tariff string, am
 
 // VerifyWebhook проверяет подпись вебхука
 func (h *ProdamusHandler) VerifyWebhook(data url.Values, signature string) bool {
-	expectedSignature := h.createSignature(data)
+	expectedSignature := h.CreateSignature(data)
 	return expectedSignature == signature
+}
+
+// VerifySubscriptionWebhook проверяет подпись вебхука подписки
+func (h *ProdamusHandler) VerifySubscriptionWebhook(data url.Values, signature string) bool {
+	expectedSignature := h.CreateSubscriptionSignature(data)
+	return strings.ToLower(expectedSignature) == strings.ToLower(signature)
 }
 
 // ProcessWebhook обрабатывает вебхуки от Prodamus
@@ -128,8 +166,22 @@ func (h *ProdamusHandler) ProcessWebhook(data url.Values, signature string) (*We
 	}
 
 	var webhookData WebhookData
-	// Преобразуем данные из url.Values в структуру
-	// Здесь нужно реализовать парсинг данных
+	
+	// Парсим данные из url.Values
+	webhookData.Date = data.Get("date")
+	webhookData.OrderID = data.Get("order_id")
+	webhookData.Sum = data.Get("sum")
+	webhookData.CustomerPhone = data.Get("customer_phone")
+	webhookData.CustomerEmail = data.Get("customer_email")
+	webhookData.PaymentType = data.Get("payment_type")
+
+	// Парсим данные подписки, если они есть
+	if subscriptionData := data.Get("subscription"); subscriptionData != "" {
+		var subscription SubscriptionWebhook
+		if err := json.Unmarshal([]byte(subscriptionData), &subscription); err == nil {
+			webhookData.Subscription = &subscription
+		}
+	}
 
 	return &webhookData, nil
 }
@@ -146,7 +198,7 @@ func (h *ProdamusHandler) SetSubscriptionActivity(subscriptionID int, tgUserID i
 		data.Set("active_manager", "0")
 	}
 
-	signature := h.createSignature(data)
+	signature := h.CreateSignature(data)
 	data.Set("signature", signature)
 
 	// Отправляем POST запрос
@@ -163,19 +215,25 @@ func (h *ProdamusHandler) SetSubscriptionActivity(subscriptionID int, tgUserID i
 	return nil
 }
 
-// createSignature создает подпись для запроса
-func (h *ProdamusHandler) createSignature(data url.Values) string {
+// CreateSignature создает подпись для запроса
+func (h *ProdamusHandler) CreateSignature(data url.Values) string {
 	// Сортируем параметры по алфавиту
 	keys := make([]string, 0, len(data))
 	for k := range data {
-		keys = append(keys, k)
+		if k != "signature" { // Исключаем параметр signature
+			keys = append(keys, k)
+		}
 	}
+	
+	// Сортируем ключи по алфавиту
+	sort.Strings(keys)
 
 	// Формируем строку для подписи
 	var parts []string
 	for _, key := range keys {
-		if key != "signature" { // Исключаем параметр signature
-			parts = append(parts, fmt.Sprintf("%s=%s", key, data.Get(key)))
+		value := data.Get(key)
+		if value != "" { // Добавляем только непустые значения
+			parts = append(parts, fmt.Sprintf("%s=%s", key, value))
 		}
 	}
 
@@ -186,4 +244,87 @@ func (h *ProdamusHandler) createSignature(data url.Values) string {
 	mac.Write([]byte(signString))
 
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// CreateSubscriptionSignature создает подпись для подписок (использует JSON как в PHP)
+func (h *ProdamusHandler) CreateSubscriptionSignature(data url.Values) string {
+	// Преобразуем url.Values в map[string]interface{}
+	dataMap := make(map[string]interface{})
+	for key, values := range data {
+		if key != "signature" {
+			if len(values) == 1 {
+				dataMap[key] = values[0]
+			} else {
+				dataMap[key] = values
+			}
+		}
+	}
+	
+	// Преобразуем все значения в строки (как array_walk_recursive в PHP)
+	h.convertToStrings(dataMap)
+	
+	// Сортируем рекурсивно
+	h.sortRecursive(dataMap)
+	
+	// Преобразуем в JSON (как в PHP)
+	jsonData, err := json.Marshal(dataMap)
+	if err != nil {
+		return ""
+	}
+	
+	// Создаем HMAC-SHA256 подпись
+	mac := hmac.New(sha256.New, []byte(h.WebhookSecret))
+	mac.Write(jsonData)
+	
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// convertToStrings преобразует все значения в строки (как array_walk_recursive в PHP)
+func (h *ProdamusHandler) convertToStrings(data map[string]interface{}) {
+	for key, value := range data {
+		switch v := value.(type) {
+		case map[string]interface{}:
+			h.convertToStrings(v)
+		case []interface{}:
+			for i, item := range v {
+				if str, ok := item.(string); ok {
+					v[i] = str
+				} else {
+					v[i] = fmt.Sprintf("%v", item)
+				}
+			}
+			data[key] = v
+		default:
+			data[key] = fmt.Sprintf("%v", v)
+		}
+	}
+}
+
+// sortRecursive сортирует рекурсивно (как _sort в PHP)
+func (h *ProdamusHandler) sortRecursive(data map[string]interface{}) {
+	// Сортируем ключи
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	
+	// Создаем новый отсортированный map
+	sortedData := make(map[string]interface{})
+	for _, key := range keys {
+		value := data[key]
+		
+		// Рекурсивно сортируем вложенные массивы
+		if nestedMap, ok := value.(map[string]interface{}); ok {
+			h.sortRecursive(nestedMap)
+			sortedData[key] = nestedMap
+		} else {
+			sortedData[key] = value
+		}
+	}
+	
+	// Копируем отсортированные данные обратно
+	for k, v := range sortedData {
+		data[k] = v
+	}
 }

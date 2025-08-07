@@ -77,6 +77,8 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleProfile(bot, callback)
 	case "subscription":
 		ih.handleSubscription(bot, callback)
+	case "buy_premium":
+		ih.handleBuyPremium(bot, callback)
 	case "styling_settings":
 		ih.handleStylingSettings(bot, callback)
 	case "test_formatting":
@@ -780,7 +782,7 @@ func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.Callbac
 • Расширенные возможности редактирования
 • Доступ к эксклюзивным функциям
 
-💳 Стоимость: 299₽/месяц`
+💳 Стоимость: 990₽/месяц`
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -883,6 +885,45 @@ _Курсив_ - для акцентов и выделения
 		"✅ Тестовое сообщение с форматированием отправлено! Проверьте чат выше.",
 	)
 	keyboard := bot.CreateMainKeyboard()
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// handleBuyPremium обрабатывает покупку премиум подписки
+func (ih *InlineHandler) handleBuyPremium(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+	
+	// Создаем ссылку на оплату подписки
+	paymentURL, err := bot.CreateSubscriptionLink(userID, "premium", 990.0)
+	if err != nil {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка создания ссылки на оплату. Попробуйте позже.",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Создаем кнопку для перехода к оплате
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("💳 Перейти к оплате", paymentURL),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "subscription"),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"💳 *Оформление подписки*\n\n"+
+			"💰 Стоимость: 990₽/месяц\n"+
+			"📅 Период: 1 месяц\n\n"+
+			"Нажмите кнопку ниже для перехода к оплате:",
+	)
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
