@@ -10,6 +10,7 @@ import (
 	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/voice"
+	"ai_tg_writer/internal/infrastructure/yookassa"
 	"ai_tg_writer/internal/service"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -54,15 +55,17 @@ func main() {
 
 	// Создаем репозиторий подписок
 	subscriptionRepo := database.NewSubscriptionRepository(db)
-	
+
 	// Создаем сервис подписок (временно без платежного модуля)
-	subscriptionService := service.NewSubscriptionService(subscriptionRepo, nil)
+	// Инициализируем клиента YooKassa
+	ykClient := yookassa.New()
+	subscriptionService := service.NewSubscriptionService(subscriptionRepo, ykClient)
 	fmt.Println("Сервис подписок инициализирован")
 
 	// Создаем HTTP-сервер для обработки платежей
 	httpServer := api.NewServer("8080")
 	httpServer.SetupRoutes(subscriptionService, nil, db)
-	
+
 	// Запускаем HTTP-сервер в горутине
 	go func() {
 		if err := httpServer.Start(); err != nil {

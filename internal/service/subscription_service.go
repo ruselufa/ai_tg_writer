@@ -2,19 +2,22 @@ package service
 
 import (
 	"ai_tg_writer/internal/domain"
+	"ai_tg_writer/internal/infrastructure/yookassa"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 )
 
 type SubscriptionService struct {
-	repo            domain.SubscriptionRepository
-	prodamusHandler interface{} // Временно используем interface{} для совместимости
+	repo domain.SubscriptionRepository
+	yk   *yookassa.Client
 }
 
-func NewSubscriptionService(repo domain.SubscriptionRepository, prodamusHandler interface{}) *SubscriptionService {
+func NewSubscriptionService(repo domain.SubscriptionRepository, ykClient *yookassa.Client) *SubscriptionService {
 	return &SubscriptionService{
-		repo:            repo,
-		prodamusHandler: prodamusHandler,
+		repo: repo,
+		yk:   ykClient,
 	}
 }
 
@@ -128,9 +131,64 @@ func (s *SubscriptionService) GetUserTariff(userID int64) (string, error) {
 
 // CreateSubscriptionLink создает ссылку для оплаты подписки
 func (s *SubscriptionService) CreateSubscriptionLink(userID int64, tariff string, amount float64) (string, error) {
-	// Временно возвращаем заглушку
-	// TODO: Добавить интеграцию с новым платежным модулем
-	return "https://example.com/payment?user_id=" + fmt.Sprintf("%d", userID), nil
+	// Убедимся, что есть запись подписки в БД (pending)
+	sub, err := s.repo.GetByUserID(userID)
+	if err != nil {
+		return "", fmt.Errorf("get subscription: %w", err)
+	}
+	if sub == nil {
+		if _, err := s.CreateSubscription(userID, tariff, amount); err != nil {
+			return "", err
+		}
+	}
+
+	if s.yk == nil {
+		return "", fmt.Errorf("yookassa client is not configured")
+	}
+
+	// Формируем платеж с сохранением метода
+	value := fmt.Sprintf("%.2f", amount)
+	idem := fmt.Sprintf("%d-%d", userID, time.Now().UnixNano())
+	returnURL := getenv("YK_RETURN_URL_ADDRESS", "")
+
+	payment, err := s.yk.CreateInitialPayment(
+		idem,
+		yookassa.Amount{Value: value, Currency: "RUB"},
+		"Подписка AI TG Writer",
+		strconv.FormatInt(userID, 10),
+		returnURL,
+		map[string]string{"tg_user_id": strconv.FormatInt(userID, 10)},
+	)
+	if err != nil {
+		return "", fmt.Errorf("create initial payment: %w", err)
+	}
+
+	// Достаем confirmation_url из ответа
+	conf, ok := payment["confirmation"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("confirmation not found in response")
+	}
+	url, _ := conf["confirmation_url"].(string)
+	if url == "" {
+		return "", fmt.Errorf("confirmation_url not found")
+	}
+	return url, nil
+}
+
+// SaveYooKassaBindingAndActivate сохраняет customer/payment_method и активирует подписку
+func (s *SubscriptionService) SaveYooKassaBindingAndActivate(userID int64, customerID, paymentMethodID, paymentID string, amount float64) error {
+	if err := s.repo.UpdateYooKassaBindings(userID, customerID, paymentMethodID, paymentID); err != nil {
+		return fmt.Errorf("update bindings: %w", err)
+	}
+	return s.ProcessPayment(userID, amount)
+}
+
+// small helper for env with default
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 // GetAvailableTariffs возвращает доступные тарифы

@@ -164,3 +164,13 @@ func (r *SubscriptionRepository) GetActiveSubscriptions() ([]*domain.Subscriptio
 
 	return subscriptions, nil
 }
+
+func (r *SubscriptionRepository) UpdateYooKassaBindings(userID int64, customerID, paymentMethodID, lastPaymentID string) error {
+	_, err := r.db.Exec(`
+		UPDATE subscriptions
+		SET yk_customer_id = $1, yk_payment_method_id = $2, yk_last_payment_id = $3
+		WHERE user_id = $4 AND active = true`,
+		customerID, paymentMethodID, lastPaymentID, userID,
+	)
+	return err
+}

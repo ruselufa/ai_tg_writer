@@ -4,17 +4,20 @@ import "time"
 
 // Subscription представляет подписку пользователя
 type Subscription struct {
-	ID             int64      `json:"id"`
-	UserID         int64      `json:"user_id"`
-	SubscriptionID int        `json:"subscription_id"`
-	Tariff         string     `json:"tariff"`
-	Status         string     `json:"status"`
-	Amount         float64    `json:"amount"`
-	NextPayment    time.Time  `json:"next_payment"`
-	LastPayment    time.Time  `json:"last_payment"`
-	CreatedAt      time.Time  `json:"created_at"`
-	CancelledAt    *time.Time `json:"cancelled_at,omitempty"`
-	Active         bool       `json:"active"`
+	ID                int64      `json:"id"`
+	UserID            int64      `json:"user_id"`
+	SubscriptionID    int        `json:"subscription_id"`
+	Tariff            string     `json:"tariff"`
+	Status            string     `json:"status"`
+	Amount            float64    `json:"amount"`
+	NextPayment       time.Time  `json:"next_payment"`
+	LastPayment       time.Time  `json:"last_payment"`
+	CreatedAt         time.Time  `json:"created_at"`
+	CancelledAt       *time.Time `json:"cancelled_at,omitempty"`
+	Active            bool       `json:"active"`
+	YKCustomerID      *string    `json:"yk_customer_id"`
+	YKPaymentMethodID *string    `json:"yk_payment_method_id"`
+	YKLastPaymentID   *string    `json:"yk_last_payment_id"`
 }
 
 // SubscriptionStatus представляет статусы подписки
@@ -47,6 +50,7 @@ type SubscriptionRepository interface {
 	UpdateNextPayment(userID int64, nextPayment time.Time) error
 	Cancel(userID int64) error
 	GetActiveSubscriptions() ([]*Subscription, error)
+	UpdateYooKassaBindings(userID int64, customerID, paymentMethodID, lastPaymentID string) error
 }
 
 // SubscriptionService интерфейс для бизнес-логики подписок
