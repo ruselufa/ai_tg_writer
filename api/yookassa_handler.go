@@ -1,6 +1,7 @@
 package api
 
 import (
+	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/yookassa"
 	"ai_tg_writer/internal/service"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gorilla/mux"
 )
 
@@ -18,10 +20,11 @@ type YooKassaHandler struct {
 	subs *service.SubscriptionService
 	db   *database.DB
 	yc   *yookassa.Client
+	bot  *bot.Bot
 }
 
-func NewYooKassaHandler(subs *service.SubscriptionService, db *database.DB) *YooKassaHandler {
-	return &YooKassaHandler{subs: subs, db: db, yc: yookassa.New()}
+func NewYooKassaHandler(subs *service.SubscriptionService, db *database.DB, bot *bot.Bot) *YooKassaHandler {
+	return &YooKassaHandler{subs: subs, db: db, yc: yookassa.New(), bot: bot}
 }
 
 // 6.1 Создать первичный платеж для привязки карты
@@ -134,6 +137,9 @@ func (h *YooKassaHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 					log.Printf("❌ Save binding error: %v", err)
 				} else {
 					log.Printf("✅ Binding saved and subscription activated successfully")
+
+					// Отправляем уведомление пользователю в Telegram
+					h.sendSubscriptionActivatedMessage(uid)
 				}
 			} else {
 				log.Printf("❌ Failed to parse TG User ID: %v", err)
@@ -175,6 +181,44 @@ func (h *YooKassaHandler) Charge(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(payment)
+}
+
+// sendSubscriptionActivatedMessage отправляет уведомление об активации подписки
+func (h *YooKassaHandler) sendSubscriptionActivatedMessage(userID int64) {
+	// Создаем сообщение об успешной активации подписки
+	text := "🎉 *Подписка успешно активирована!*\n\n" +
+		"✅ Premium подписка активна\n" +
+		"🚀 Теперь вам доступны все возможности:\n" +
+		"• Неограниченное количество постов\n" +
+		"• Приоритетная обработка запросов\n" +
+		"• Расширенные функции редактирования\n" +
+		"• Эксклюзивные шаблоны\n\n" +
+		"Добро пожаловать в Premium! 💎"
+
+	// Создаем клавиатуру с главным меню
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост", "create_post"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
+			tgbotapi.NewInlineKeyboardButtonData("💎 Моя подписка", "subscription"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help"),
+		),
+	)
+
+	// Отправляем сообщение
+	msg := tgbotapi.NewMessage(userID, text)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = &keyboard
+
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("❌ Error sending subscription activated message to user %d: %v", userID, err)
+	} else {
+		log.Printf("✅ Subscription activated message sent to user %d", userID)
+	}
 }
 
 func (h *YooKassaHandler) SetupRoutes(r *mux.Router) {

@@ -62,6 +62,43 @@ func (r *SubscriptionRepository) GetByUserID(userID int64) (*domain.Subscription
 	return subscription, err
 }
 
+func (r *SubscriptionRepository) GetAnyByUserID(userID int64) (*domain.Subscription, error) {
+	query := `
+		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id
+		FROM subscriptions
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1`
+
+	subscription := &domain.Subscription{}
+	err := r.db.QueryRow(query, userID).Scan(
+		&subscription.ID,
+		&subscription.UserID,
+		&subscription.SubscriptionID,
+		&subscription.Tariff,
+		&subscription.Status,
+		&subscription.Amount,
+		&subscription.NextPayment,
+		&subscription.LastPayment,
+		&subscription.CreatedAt,
+		&subscription.CancelledAt,
+		&subscription.Active,
+		&subscription.YKCustomerID,
+		&subscription.YKPaymentMethodID,
+		&subscription.YKLastPaymentID,
+	)
+
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return subscription, nil
+}
+
 func (r *SubscriptionRepository) GetBySubscriptionID(subscriptionID int) (*domain.Subscription, error) {
 	query := `
 		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active

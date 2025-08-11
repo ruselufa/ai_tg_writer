@@ -32,6 +32,7 @@ type UserState struct {
 	Tariff            string                         // тариф пользователя (free, premium)
 	UsageCount        int                            // количество использований
 	LastUsage         time.Time                      // дата последнего использования
+	WaitingForEmail   bool                           // ожидаем ввод email
 	ReferralCode      string                         // реферальный код пользователя
 	ReferredBy        *int64                         // ID пользователя, который пригласил
 }

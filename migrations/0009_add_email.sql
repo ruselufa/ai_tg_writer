@@ -1,0 +1,5 @@
+-- +goose Up
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+
+-- +goose Down
+ALTER TABLE users DROP COLUMN IF EXISTS email;

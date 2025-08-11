@@ -62,9 +62,12 @@ func main() {
 	subscriptionService := service.NewSubscriptionService(subscriptionRepo, ykClient)
 	fmt.Println("Сервис подписок инициализирован")
 
+	// Создаем обработчики
+	customBot := bot.NewBotWithSubscriptionService(botAPI, db, subscriptionService)
+
 	// Создаем HTTP-сервер для обработки платежей
 	httpServer := api.NewServer("8080")
-	httpServer.SetupRoutes(subscriptionService, nil, db)
+	httpServer.SetupRoutes(subscriptionService, nil, db, customBot)
 
 	// Запускаем HTTP-сервер в горутине
 	go func() {
@@ -73,13 +76,10 @@ func main() {
 		}
 	}()
 	fmt.Println("HTTP-сервер запущен на порту 8080")
-
-	// Создаем обработчики
-	customBot := bot.NewBotWithSubscriptionService(botAPI, db, subscriptionService)
 	voiceHandler := voice.NewVoiceHandler(botAPI)
 	stateManager := bot.NewStateManager(db)
 	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
-	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler)
+	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler, inlineHandler)
 	fmt.Println("Обработчики созданы")
 	// Настраиваем обновления
 	updateConfig := tgbotapi.NewUpdate(0)
@@ -105,7 +105,23 @@ func main() {
 			continue
 		}
 		fmt.Println("Обработка текстового сообщения")
-		// Обрабатываем команды и текстовые сообщения
+		// Сначала обрабатываем команды (они имеют приоритет)
+		if update.Message.IsCommand() {
+			// Если пользователь ввёл команду, сбрасываем специальные состояния
+			userID := update.Message.From.ID
+			state := stateManager.GetState(userID)
+			if state.WaitingForEmail {
+				state.WaitingForEmail = false
+			}
+			handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
+			continue
+		}
+
+		// Затем проверяем специальные состояния (email, etc) через MessageHandler
+		if handled := messageHandler.HandleMessage(customBot, update.Message); handled {
+			continue // сообщение уже обработано, не продолжаем
+		}
+		// Обрабатываем обычные текстовые сообщения
 		handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
 	}
 }

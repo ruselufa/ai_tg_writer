@@ -1,6 +1,7 @@
 package api
 
 import (
+	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/service"
 	"encoding/json"
@@ -28,6 +29,7 @@ func (s *Server) SetupRoutes(
 	subscriptionService *service.SubscriptionService,
 	prodamusHandler interface{},
 	db *database.DB,
+	bot *bot.Bot,
 ) {
 	// Создаем обработчик платежей
 	paymentHandler := NewPaymentHandler(subscriptionService, prodamusHandler, db)
@@ -41,7 +43,7 @@ func (s *Server) SetupRoutes(
 	// Добавляем middleware для логирования
 	s.router.Use(loggingMiddleware)
 
-	yk := NewYooKassaHandler(subscriptionService, db)
+	yk := NewYooKassaHandler(subscriptionService, db, bot)
 	yk.SetupRoutes(s.router)
 }
 

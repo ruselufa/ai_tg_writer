@@ -6,7 +6,7 @@ import "time"
 type Subscription struct {
 	ID                int64      `json:"id"`
 	UserID            int64      `json:"user_id"`
-	SubscriptionID    int        `json:"subscription_id"`
+	SubscriptionID    *int       `json:"subscription_id"`
 	Tariff            string     `json:"tariff"`
 	Status            string     `json:"status"`
 	Amount            float64    `json:"amount"`
@@ -35,7 +35,7 @@ type Tariff struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Price       float64  `json:"price"`
-	Period      string   `json:"period"` // "month", "year"
+	Period      string   `json:"period"` // "month", "year", "week", "day", "hour", "minute"
 	Description string   `json:"description"`
 	Features    []string `json:"features"`
 }
@@ -44,6 +44,7 @@ type Tariff struct {
 type SubscriptionRepository interface {
 	Create(subscription *Subscription) error
 	GetByUserID(userID int64) (*Subscription, error)
+	GetAnyByUserID(userID int64) (*Subscription, error) // Получает любую подписку (включая неактивную)
 	GetBySubscriptionID(subscriptionID int) (*Subscription, error)
 	Update(subscription *Subscription) error
 	UpdateStatus(userID int64, status SubscriptionStatus) error

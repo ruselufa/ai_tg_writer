@@ -23,6 +23,7 @@ type User struct {
 	Username     string
 	FirstName    string
 	LastName     string
+	Email        string
 	Tariff       string
 	UsageCount   int
 	LastUsage    time.Time
@@ -86,6 +87,7 @@ func (db *DB) InitTables() error {
         is_admin BOOLEAN DEFAULT FALSE,
 		first_name VARCHAR(255),
 		last_name VARCHAR(255),
+		email VARCHAR(255),
 		tariff VARCHAR(50) DEFAULT 'free',
 		usage_count INTEGER DEFAULT 0,
 		last_usage TIMESTAMP,
@@ -221,6 +223,12 @@ func (db *DB) GetUserTariff(userID int64) (string, error) {
 // UpdateUserTariff обновляет тариф пользователя
 func (db *DB) UpdateUserTariff(userID int64, tariff string) error {
 	_, err := db.Exec(`UPDATE users SET tariff = $1 WHERE id = $2`, tariff, userID)
+	return err
+}
+
+// UpdateUserEmail обновляет email пользователя
+func (db *DB) UpdateUserEmail(userID int64, email string) error {
+	_, err := db.Exec(`UPDATE users SET email=$1 WHERE id=$2`, email, userID)
 	return err
 }
 

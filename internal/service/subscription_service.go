@@ -37,13 +37,13 @@ func (s *SubscriptionService) CreateSubscription(userID int64, tariff string, am
 	// Создаем подписку в базе данных
 	subscription := &domain.Subscription{
 		UserID:         userID,
-		SubscriptionID: 1, // ID подписки в Prodamus
+		SubscriptionID: nil, // Не используется для YooKassa (только для Prodamus)
 		Tariff:         tariff,
 		Status:         string(domain.SubscriptionStatusPending),
 		Amount:         amount,
 		NextPayment:    time.Now().AddDate(0, 1, 0), // +1 месяц
 		LastPayment:    time.Now(),
-		Active:         true,
+		Active:         false, // Станет true после успешной оплаты
 	}
 
 	if err := s.repo.Create(subscription); err != nil {
@@ -85,7 +85,8 @@ func (s *SubscriptionService) CancelSubscription(userID int64) error {
 
 // ProcessPayment обрабатывает успешный платеж
 func (s *SubscriptionService) ProcessPayment(userID int64, amount float64) error {
-	subscription, err := s.repo.GetByUserID(userID)
+	// Ищем любую подписку пользователя (включая неактивную pending)
+	subscription, err := s.repo.GetAnyByUserID(userID)
 	if err != nil {
 		return fmt.Errorf("error getting subscription: %w", err)
 	}
@@ -94,15 +95,20 @@ func (s *SubscriptionService) ProcessPayment(userID int64, amount float64) error
 		return fmt.Errorf("subscription not found")
 	}
 
+	log.Printf("📝 Activating subscription for user %d: ID=%d, Status=%s, Active=%v",
+		userID, subscription.ID, subscription.Status, subscription.Active)
+
 	// Обновляем статус и даты
 	subscription.Status = string(domain.SubscriptionStatusActive)
 	subscription.LastPayment = time.Now()
 	subscription.NextPayment = time.Now().AddDate(0, 1, 0) // +1 месяц
+	subscription.Active = true                             // Активируем подписку
 
 	if err := s.repo.Update(subscription); err != nil {
 		return fmt.Errorf("error updating subscription: %w", err)
 	}
 
+	log.Printf("✅ Subscription activated successfully for user %d", userID)
 	return nil
 }
 
@@ -132,25 +138,41 @@ func (s *SubscriptionService) GetUserTariff(userID int64) (string, error) {
 
 // CreateSubscriptionLink создает ссылку для оплаты подписки
 func (s *SubscriptionService) CreateSubscriptionLink(userID int64, tariff string, amount float64) (string, error) {
+	log.Printf("=== CreateSubscriptionLink START ===")
+	log.Printf("UserID: %d, Tariff: %s, Amount: %.2f", userID, tariff, amount)
+
 	// Убедимся, что есть запись подписки в БД (pending)
 	sub, err := s.repo.GetByUserID(userID)
 	if err != nil {
+		log.Printf("❌ Error getting subscription: %v", err)
 		return "", fmt.Errorf("get subscription: %w", err)
 	}
+	log.Printf("✅ Subscription check passed, sub=%v", sub != nil)
+
 	if sub == nil {
+		log.Printf("📝 Creating new subscription...")
 		if _, err := s.CreateSubscription(userID, tariff, amount); err != nil {
+			log.Printf("❌ Error creating subscription: %v", err)
 			return "", err
 		}
+		log.Printf("✅ Subscription created successfully")
 	}
 
 	if s.yk == nil {
+		log.Printf("❌ YooKassa client is nil")
 		return "", fmt.Errorf("yookassa client is not configured")
 	}
+	log.Printf("✅ YooKassa client is configured")
 
 	// Формируем платеж с сохранением метода
 	value := fmt.Sprintf("%.2f", amount)
 	idem := fmt.Sprintf("%d-%d", userID, time.Now().UnixNano())
 	returnURL := getenv("YK_RETURN_URL_ADDRESS", "")
+
+	log.Printf("💳 Calling YooKassa CreateInitialPayment...")
+	log.Printf("   Value: %s, IdempotenceKey: %s", value, idem)
+	log.Printf("   ReturnURL: %s", returnURL)
+	log.Printf("   CustomerID: %s", strconv.FormatInt(userID, 10))
 
 	payment, err := s.yk.CreateInitialPayment(
 		idem,
@@ -161,8 +183,10 @@ func (s *SubscriptionService) CreateSubscriptionLink(userID int64, tariff string
 		map[string]string{"tg_user_id": strconv.FormatInt(userID, 10)},
 	)
 	if err != nil {
+		log.Printf("❌ YooKassa CreateInitialPayment error: %v", err)
 		return "", fmt.Errorf("create initial payment: %w", err)
 	}
+	log.Printf("✅ YooKassa CreateInitialPayment success")
 
 	// Логируем весь ответ от YooKassa для отладки
 	log.Printf("=== YooKassa CreateInitialPayment Response ===")

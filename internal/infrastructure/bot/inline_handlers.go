@@ -1,12 +1,12 @@
 package bot
 
 import (
+	"ai_tg_writer/internal/domain"
 	"ai_tg_writer/internal/infrastructure/voice"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -79,6 +79,8 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleSubscription(bot, callback)
 	case "buy_premium":
 		ih.handleBuyPremium(bot, callback)
+	case "confirm_purchase":
+		ih.handleConfirmPurchase(bot, callback)
 	case "styling_settings":
 		ih.handleStylingSettings(bot, callback)
 	case "test_formatting":
@@ -364,6 +366,23 @@ func (ih *InlineHandler) handleMainMenu(bot *Bot, callback *tgbotapi.CallbackQue
 		log.Printf("Пост сохранен в БД (заглушка) при выходе в меню: %s", state.CurrentPost.ContentType)
 	}
 
+	// Получаем информацию о подписке
+	sub, _ := bot.SubscriptionService.GetUserSubscription(userID)
+	// Получаем usage сегодня
+	used, _ := bot.DB.GetUserUsageToday(userID)
+	const freeLimit = 5
+
+	var subLabel string
+	if sub != nil && sub.Active {
+		subLabel = "💎 Подписка: Premium"
+	} else {
+		remaining := freeLimit - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		subLabel = fmt.Sprintf("💎 Подписка (%d/%d)", remaining, freeLimit)
+	}
+
 	// Полностью очищаем состояние
 	ih.stateManager.UpdateStep(userID, "idle")
 	ih.stateManager.SetCurrentPost(userID, nil)
@@ -374,17 +393,22 @@ func (ih *InlineHandler) handleMainMenu(bot *Bot, callback *tgbotapi.CallbackQue
 	ih.stateManager.SetApprovalStatus(userID, "idle")
 	ih.stateManager.SetWaitingForVoice(userID, false)
 
-	// Отправляем главное меню
+	// Формируем главное меню с динамичной подписью подписки
 	text := "Привет! Я помогу тебе создать мощный контент из твоих идей. Выбери, что хочешь создать:"
-	keyboard := bot.CreateMainKeyboard()
-
-	msg := tgbotapi.NewEditMessageText(
-		callback.Message.Chat.ID,
-		callback.Message.MessageID,
-		text,
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post")),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("---------------", "no_action")),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
+			tgbotapi.NewInlineKeyboardButtonData(subLabel, "subscription")),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help")),
 	)
-	msg.ReplyMarkup = &keyboard
 
+	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text)
+	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
 
@@ -747,34 +771,92 @@ func (ih *InlineHandler) handleHelp(bot *Bot, callback *tgbotapi.CallbackQuery) 
 
 // handleProfile обрабатывает кнопку профиля
 func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuery) {
-	text := `👤 Ваш профиль
+	userID := callback.From.ID
 
-🆔 ID пользователя: ` + strconv.FormatInt(callback.From.ID, 10) + `
+	// Получаем информацию о подписке пользователя
+	sub, _ := bot.SubscriptionService.GetUserSubscription(userID)
+	available := bot.SubscriptionService.GetAvailableTariffs()
+	var premium domain.Tariff
+	if len(available) > 0 {
+		premium = available[0]
+	}
+
+	var messageText string
+	var keyboard tgbotapi.InlineKeyboardMarkup
+
+	if sub == nil || !sub.Active {
+		// Нет подписки
+		messageText = fmt.Sprintf(`👤 Ваш профиль
+
+🆔 ID: %d
 📊 Тариф: Бесплатный
-📈 Использовано сегодня: 0/5`
+⏰ Срок действия: бессрочно
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
-		),
-	)
+💎 *Премиум-тариф* – %s
 
-	msg := tgbotapi.NewEditMessageText(
-		callback.Message.Chat.ID,
-		callback.Message.MessageID,
-		text,
-	)
+✨ Преимущества:
+• Неограниченное число запросов
+• Приоритетная очередь
+
+💰 Стоимость: %.0f₽/месяц`, userID, premium.Description, premium.Price)
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💳 Приобрести подписку", "buy_premium"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	} else {
+		// Есть активная подписка
+		nextPay := sub.NextPayment.Format("02.01.2006")
+		messageText = fmt.Sprintf(`👤 Ваш профиль
+
+🆔 ID: %d
+💎 Подписка: Premium
+📅 Следующий платеж: %s
+✅ Статус: активна`, userID, nextPay)
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	}
+
+	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, messageText)
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
-
 	bot.Send(msg)
 }
 
 // handleSubscription обрабатывает кнопку подписки
 func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.CallbackQuery) {
-	text := `💎 Подписка
+	userID := callback.From.ID
 
-📊 Текущий тариф: Бесплатный
-⏰ Срок действия: Бессрочно
+	// Информация о подписке
+	sub, _ := bot.SubscriptionService.GetUserSubscription(userID)
+	// Лимит бесплатных запросов
+	used, _ := bot.DB.GetUserUsageToday(userID)
+	const freeLimit = 5
+
+	var text string
+	var keyboard tgbotapi.InlineKeyboardMarkup
+
+	if sub == nil || !sub.Active {
+		remaining := freeLimit - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		text = fmt.Sprintf(`💎 Подписка
+
+📊 Текущий тариф: *Бесплатный*
+⏰ Срок действия: бессрочно
+📈 Осталось бесплатных постов сегодня: *%d/%d*
 
 ✨ Премиум тариф:
 • Неограниченное количество сообщений
@@ -782,21 +864,36 @@ func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.Callbac
 • Расширенные возможности редактирования
 • Доступ к эксклюзивным функциям
 
-💳 Стоимость: 990₽/месяц`
+💳 Стоимость: 990₽/месяц`, remaining, freeLimit)
 
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💰 Купить подписку", "buy_premium"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
-		),
-	)
-	msg := tgbotapi.NewEditMessageText(
-		callback.Message.Chat.ID,
-		callback.Message.MessageID,
-		text,
-	)
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💰 Купить подписку", "buy_premium"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	} else {
+		nextPay := sub.NextPayment.Format("02.01.2006")
+		text = fmt.Sprintf(`💎 Подписка
+
+📊 Текущий тариф: *Premium*
+📅 Следующий платеж: %s
+✅ Статус: активна`, nextPay)
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	}
+
+	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text)
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
@@ -892,7 +989,59 @@ _Курсив_ - для акцентов и выделения
 // handleBuyPremium обрабатывает покупку премиум подписки
 func (ih *InlineHandler) handleBuyPremium(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
-	
+
+	user, _ := bot.DB.GetOrCreateUser(userID, callback.From.UserName, callback.From.FirstName, callback.From.LastName)
+	if user.Email == "" {
+		// помечаем ожидание email
+		ih.stateManager.GetState(userID).WaitingForEmail = true
+		msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID,
+			"📧 *Введите ваш e-mail*\n\n"+
+				"Для получения кассового чека нужен e-mail адрес.\n"+
+				"Пример: user@example.com\n\n"+
+				"💡 Для отмены используйте /start")
+		msg.ParseMode = "Markdown"
+		bot.Send(msg)
+		return
+	}
+
+	// Показываем экран оформления подписки с преимуществами
+	text := "💎 *Оформление Premium подписки*\n\n" +
+		"✨ *Преимущества Premium:*\n" +
+		"• 🚀 Неограниченное количество постов\n" +
+		"• ⚡ Приоритетная обработка запросов\n" +
+		"• 🎨 Расширенные настройки стилизации\n" +
+		"• 📈 Детальная аналитика использования\n" +
+		"• 🔧 Эксклюзивные функции и шаблоны\n" +
+		"• 💬 Приоритетная техподдержка\n\n" +
+		"💰 *Стоимость:* 990₽/месяц\n" +
+		"📅 *Период:* 1 месяц\n" +
+		"♻️ *Автопродление:* включено\n\n" +
+		"📋 *Оферта:* [Пользовательское соглашение](#)\n\n" +
+		"Нажмите «Подтвердить покупку» для перехода к оплате:"
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Подтвердить покупку", "confirm_purchase"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "subscription"),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		text,
+	)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// handleConfirmPurchase обрабатывает подтверждение покупки
+func (ih *InlineHandler) handleConfirmPurchase(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
 	// Создаем ссылку на оплату подписки
 	paymentURL, err := bot.CreateSubscriptionLink(userID, "premium", 990.0)
 	if err != nil {
@@ -911,17 +1060,16 @@ func (ih *InlineHandler) handleBuyPremium(bot *Bot, callback *tgbotapi.CallbackQ
 			tgbotapi.NewInlineKeyboardButtonURL("💳 Перейти к оплате", paymentURL),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "subscription"),
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад", "buy_premium"),
 		),
 	)
 
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
-		"💳 *Оформление подписки*\n\n"+
-			"💰 Стоимость: 990₽/месяц\n"+
-			"📅 Период: 1 месяц\n\n"+
-			"Нажмите кнопку ниже для перехода к оплате:",
+		"💳 *Переход к оплате*\n\n"+
+			"Нажмите кнопку ниже для перехода к оплате.\n"+
+			"После успешной оплаты ваша подписка будет активирована автоматически.",
 	)
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard

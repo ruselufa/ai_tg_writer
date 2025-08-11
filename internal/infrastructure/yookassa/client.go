@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -33,6 +35,14 @@ func (c *Client) authHeader() string {
 
 func (c *Client) do(idemKey, method, path string, body any, out any) error {
 	b, _ := json.Marshal(body)
+
+	log.Printf("🌐 YooKassa HTTP Request:")
+	log.Printf("   URL: %s%s", c.BaseURL, path)
+	log.Printf("   Method: %s", method)
+	log.Printf("   Body: %s", string(b))
+	log.Printf("   ShopID: %s (len=%d)", c.ShopID, len(c.ShopID))
+	log.Printf("   SecretKey: %s... (len=%d)", c.SecretKey[:min(8, len(c.SecretKey))], len(c.SecretKey))
+
 	req, _ := http.NewRequest(method, c.BaseURL+path, bytes.NewReader(b))
 	req.Header.Set("Authorization", c.authHeader())
 	req.Header.Set("Content-Type", "application/json")
@@ -41,16 +51,32 @@ func (c *Client) do(idemKey, method, path string, body any, out any) error {
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		log.Printf("❌ HTTP request error: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
+
+	// Читаем ответ для логирования
+	respBody, _ := io.ReadAll(resp.Body)
+	log.Printf("📡 YooKassa HTTP Response:")
+	log.Printf("   Status: %d", resp.StatusCode)
+	log.Printf("   Body: %s", string(respBody))
+
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("yookassa http %d", resp.StatusCode)
+		log.Printf("❌ YooKassa HTTP error %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("yookassa http %d: %s", resp.StatusCode, string(respBody))
 	}
 	if out != nil {
-		return json.NewDecoder(resp.Body).Decode(out)
+		return json.Unmarshal(respBody, out)
 	}
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 type Amount struct{ Value, Currency string }
