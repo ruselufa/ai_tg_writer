@@ -99,6 +99,56 @@ func (r *SubscriptionRepository) GetAnyByUserID(userID int64) (*domain.Subscript
 	return subscription, nil
 }
 
+func (r *SubscriptionRepository) GetSubscriptionsDueForRenewal() ([]*domain.Subscription, error) {
+	query := `
+		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id
+		FROM subscriptions
+		WHERE active = true 
+		  AND status = 'active'
+		  AND next_payment <= NOW()
+		  AND yk_customer_id IS NOT NULL 
+		  AND yk_payment_method_id IS NOT NULL`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subscriptions []*domain.Subscription
+	for rows.Next() {
+		subscription := &domain.Subscription{}
+		err := rows.Scan(
+			&subscription.ID,
+			&subscription.UserID,
+			&subscription.SubscriptionID,
+			&subscription.Tariff,
+			&subscription.Status,
+			&subscription.Amount,
+			&subscription.NextPayment,
+			&subscription.LastPayment,
+			&subscription.CreatedAt,
+			&subscription.CancelledAt,
+			&subscription.Active,
+			&subscription.YKCustomerID,
+			&subscription.YKPaymentMethodID,
+			&subscription.YKLastPaymentID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		subscriptions = append(subscriptions, subscription)
+	}
+
+	return subscriptions, nil
+}
+
+// GetDB возвращает подключение к базе данных (временный метод для прямых запросов)
+func (r *SubscriptionRepository) GetDB() *DB {
+	return r.db
+}
+
 func (r *SubscriptionRepository) GetBySubscriptionID(subscriptionID int) (*domain.Subscription, error) {
 	query := `
 		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active
@@ -203,10 +253,16 @@ func (r *SubscriptionRepository) GetActiveSubscriptions() ([]*domain.Subscriptio
 }
 
 func (r *SubscriptionRepository) UpdateYooKassaBindings(userID int64, customerID, paymentMethodID, lastPaymentID string) error {
+	// Обновляем самую новую подписку пользователя (включая pending)
 	_, err := r.db.Exec(`
 		UPDATE subscriptions
 		SET yk_customer_id = $1, yk_payment_method_id = $2, yk_last_payment_id = $3
-		WHERE user_id = $4 AND active = true`,
+		WHERE id = (
+			SELECT id FROM subscriptions 
+			WHERE user_id = $4 
+			ORDER BY created_at DESC 
+			LIMIT 1
+		)`,
 		customerID, paymentMethodID, lastPaymentID, userID,
 	)
 	return err

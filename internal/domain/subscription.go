@@ -52,6 +52,7 @@ type SubscriptionRepository interface {
 	Cancel(userID int64) error
 	GetActiveSubscriptions() ([]*Subscription, error)
 	UpdateYooKassaBindings(userID int64, customerID, paymentMethodID, lastPaymentID string) error
+	GetSubscriptionsDueForRenewal() ([]*Subscription, error) // Получает подписки для продления
 }
 
 // SubscriptionService интерфейс для бизнес-логики подписок

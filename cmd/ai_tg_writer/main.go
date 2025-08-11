@@ -1,17 +1,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
+	"time"
 
 	"ai_tg_writer/api"
+	"ai_tg_writer/internal/config"
 	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/voice"
 	"ai_tg_writer/internal/infrastructure/yookassa"
 	"ai_tg_writer/internal/service"
+	"ai_tg_writer/internal/worker"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
@@ -57,9 +63,14 @@ func main() {
 	subscriptionRepo := database.NewSubscriptionRepository(db)
 
 	// Создаем сервис подписок (временно без платежного модуля)
+	// Загружаем конфигурацию
+	cfg := config.NewConfig()
+	log.Printf("📋 Configuration loaded: Mode=%s, SubscriptionInterval=%s, WorkerCheckInterval=%s",
+		cfg.Mode, cfg.SubscriptionInterval, cfg.WorkerCheckInterval)
+
 	// Инициализируем клиента YooKassa
 	ykClient := yookassa.New()
-	subscriptionService := service.NewSubscriptionService(subscriptionRepo, ykClient)
+	subscriptionService := service.NewSubscriptionService(subscriptionRepo, ykClient, cfg)
 	fmt.Println("Сервис подписок инициализирован")
 
 	// Создаем обработчики
@@ -76,6 +87,18 @@ func main() {
 		}
 	}()
 	fmt.Println("HTTP-сервер запущен на порту 8080")
+
+	// Создаем контекст для graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Запускаем воркер для рекуррентных платежей
+	subscriptionWorker := worker.NewSubscriptionWorker(subscriptionService, cfg)
+	subscriptionWorker.Start(ctx)
+
+	// Настраиваем graceful shutdown
+	setupGracefulShutdown(cancel)
+
 	voiceHandler := voice.NewVoiceHandler(botAPI)
 	stateManager := bot.NewStateManager(db)
 	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
@@ -124,6 +147,20 @@ func main() {
 		// Обрабатываем обычные текстовые сообщения
 		handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
 	}
+}
+
+// setupGracefulShutdown настраивает graceful shutdown для приложения
+func setupGracefulShutdown(cancel context.CancelFunc) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		log.Println("🛑 Получен сигнал остановки, завершаем работу...")
+		cancel()
+		time.Sleep(2 * time.Second) // Даем время воркерам завершиться
+		os.Exit(0)
+	}()
 }
 
 // handleMessage теперь не обрабатывает голосовые сообщения напрямую

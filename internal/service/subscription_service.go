@@ -1,6 +1,7 @@
 package service
 
 import (
+	"ai_tg_writer/internal/config"
 	"ai_tg_writer/internal/domain"
 	"ai_tg_writer/internal/infrastructure/yookassa"
 	"fmt"
@@ -11,14 +12,16 @@ import (
 )
 
 type SubscriptionService struct {
-	repo domain.SubscriptionRepository
-	yk   *yookassa.Client
+	repo   domain.SubscriptionRepository
+	yk     *yookassa.Client
+	config *config.Config
 }
 
-func NewSubscriptionService(repo domain.SubscriptionRepository, ykClient *yookassa.Client) *SubscriptionService {
+func NewSubscriptionService(repo domain.SubscriptionRepository, ykClient *yookassa.Client, cfg *config.Config) *SubscriptionService {
 	return &SubscriptionService{
-		repo: repo,
-		yk:   ykClient,
+		repo:   repo,
+		yk:     ykClient,
+		config: cfg,
 	}
 }
 
@@ -41,7 +44,7 @@ func (s *SubscriptionService) CreateSubscription(userID int64, tariff string, am
 		Tariff:         tariff,
 		Status:         string(domain.SubscriptionStatusPending),
 		Amount:         amount,
-		NextPayment:    time.Now().AddDate(0, 1, 0), // +1 месяц
+		NextPayment:    time.Now().Add(s.config.SubscriptionInterval), // Используем конфигурацию
 		LastPayment:    time.Now(),
 		Active:         false, // Станет true после успешной оплаты
 	}
@@ -101,8 +104,8 @@ func (s *SubscriptionService) ProcessPayment(userID int64, amount float64) error
 	// Обновляем статус и даты
 	subscription.Status = string(domain.SubscriptionStatusActive)
 	subscription.LastPayment = time.Now()
-	subscription.NextPayment = time.Now().AddDate(0, 1, 0) // +1 месяц
-	subscription.Active = true                             // Активируем подписку
+	subscription.NextPayment = time.Now().Add(s.config.SubscriptionInterval) // Используем конфигурацию
+	subscription.Active = true                                               // Активируем подписку
 
 	if err := s.repo.Update(subscription); err != nil {
 		return fmt.Errorf("error updating subscription: %w", err)
@@ -234,6 +237,66 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// GetSubscriptionsDueForRenewal возвращает подписки, которые нужно продлить
+func (s *SubscriptionService) GetSubscriptionsDueForRenewal() ([]*domain.Subscription, error) {
+	return s.repo.GetSubscriptionsDueForRenewal()
+}
+
+// ProcessRecurringPayment обрабатывает рекуррентный платеж для подписки
+func (s *SubscriptionService) ProcessRecurringPayment(subscription *domain.Subscription) error {
+	if subscription.YKCustomerID == nil || subscription.YKPaymentMethodID == nil {
+		return fmt.Errorf("missing YooKassa binding data")
+	}
+
+	log.Printf("🔄 Processing recurring payment for user %d, subscription ID %d",
+		subscription.UserID, subscription.ID)
+
+	// Создаем идемпотентный ключ
+	idempotenceKey := fmt.Sprintf("%d-recurring-%d", subscription.UserID, time.Now().Unix())
+
+	// Создаем рекуррентный платеж
+	payment, err := s.yk.CreateRecurringPayment(
+		idempotenceKey,
+		yookassa.Amount{
+			Value:    fmt.Sprintf("%.2f", subscription.Amount),
+			Currency: "RUB",
+		},
+		"Продление подписки AI TG Writer",
+		*subscription.YKCustomerID,
+		*subscription.YKPaymentMethodID,
+		map[string]string{
+			"tg_user_id":      fmt.Sprintf("%d", subscription.UserID),
+			"subscription_id": fmt.Sprintf("%d", subscription.ID),
+			"type":            "recurring",
+		},
+	)
+
+	if err != nil {
+		log.Printf("❌ Recurring payment failed for user %d: %v", subscription.UserID, err)
+		return err
+	}
+
+	log.Printf("✅ Recurring payment created for user %d: %s", subscription.UserID, payment["id"])
+
+	// Обновляем дату следующего платежа на точно такой же период
+	subscription.NextPayment = time.Now().Add(s.config.SubscriptionInterval)
+	subscription.LastPayment = time.Now()
+	if err := s.repo.Update(subscription); err != nil {
+		log.Printf("❌ Failed to update next payment date: %v", err)
+		return err
+	}
+
+	if s.config.IsDevMode() {
+		log.Printf("📅 [DEV] Next payment scheduled for user %d at %s",
+			subscription.UserID, subscription.NextPayment.Format("15:04:05"))
+	} else {
+		log.Printf("📅 [PROD] Next payment scheduled for user %d at %s",
+			subscription.UserID, subscription.NextPayment.Format("2006-01-02 15:04:05"))
+	}
+
+	return nil
 }
 
 // GetAvailableTariffs возвращает доступные тарифы
