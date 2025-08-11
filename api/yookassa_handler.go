@@ -62,64 +62,100 @@ func (h *YooKassaHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	log.Printf("YK event: %s", evt.Event)
+	log.Printf("=== YooKassa Webhook Received ===")
+	log.Printf("Event: %s", evt.Event)
+	log.Printf("Object: %+v", evt.Object)
 
 	// Получим платеж, чтобы подтвердить статус
 	id, _ := evt.Object["id"].(string)
 	if id == "" {
+		log.Printf("❌ Payment ID not found in webhook object")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	log.Printf("Payment ID from webhook: %s", id)
+
 	payment, err := h.yc.GetPayment(id)
 	if err != nil {
-		log.Printf("YK get payment err: %v", err)
+		log.Printf("❌ YK get payment err: %v", err)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	log.Printf("=== Payment Details from YooKassa API ===")
+	log.Printf("Payment ID: %s", id)
+	log.Printf("Full payment response: %+v", payment)
 
 	status, _ := payment["status"].(string)
+	log.Printf("Payment Status: %s", status)
+
 	if status == "succeeded" {
+		log.Printf("✅ Payment succeeded, processing...")
+
 		// Метаданные и пользователь
 		meta, _ := payment["metadata"].(map[string]any)
 		tgUser := ""
 		if meta != nil {
+			log.Printf("Metadata: %+v", meta)
 			if v, ok := meta["tg_user_id"].(string); ok {
 				tgUser = v
+				log.Printf("TG User ID from metadata: %s", tgUser)
 			}
 		}
+
 		// payment_method.id
 		pm := ""
 		if pmObj, ok := payment["payment_method"].(map[string]any); ok {
+			log.Printf("Payment Method: %+v", pmObj)
 			if v, ok := pmObj["id"].(string); ok {
 				pm = v
+				log.Printf("Payment Method ID: %s", pm)
 			}
 		}
+
 		// customer.id
 		cust := ""
 		if custObj, ok := payment["customer"].(map[string]any); ok {
+			log.Printf("Customer: %+v", custObj)
 			if v, ok := custObj["id"].(string); ok {
 				cust = v
+				log.Printf("Customer ID: %s", cust)
 			}
 		}
+
 		// Сохраняем привязку (если есть все данные)
 		if tgUser != "" && pm != "" && cust != "" {
+			log.Printf("✅ All required data found, saving binding...")
+
 			// Пробуем извлечь сумму
 			amountValue := 0.0
 			if amt, ok := payment["amount"].(map[string]any); ok {
+				log.Printf("Amount: %+v", amt)
 				if val, ok := amt["value"].(string); ok {
 					if f, err := strconv.ParseFloat(val, 64); err == nil {
 						amountValue = f
+						log.Printf("Parsed amount: %.2f", amountValue)
 					}
 				}
 			}
 
 			if uid, err := strconv.ParseInt(tgUser, 10, 64); err == nil {
+				log.Printf("Parsed User ID: %d", uid)
 				if err := h.subs.SaveYooKassaBindingAndActivate(uid, cust, pm, id, amountValue); err != nil {
-					log.Printf("save binding error: %v", err)
+					log.Printf("❌ Save binding error: %v", err)
+				} else {
+					log.Printf("✅ Binding saved and subscription activated successfully")
 				}
+			} else {
+				log.Printf("❌ Failed to parse TG User ID: %v", err)
 			}
+		} else {
+			log.Printf("❌ Missing required data: tgUser=%s, pm=%s, cust=%s", tgUser, pm, cust)
 		}
+	} else {
+		log.Printf("⚠️ Payment status is not 'succeeded': %s", status)
 	}
+
+	log.Printf("=== End Webhook Processing ===")
 	w.Write([]byte("ok"))
 }
 

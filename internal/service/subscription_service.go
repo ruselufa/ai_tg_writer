@@ -4,6 +4,7 @@ import (
 	"ai_tg_writer/internal/domain"
 	"ai_tg_writer/internal/infrastructure/yookassa"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -162,6 +163,26 @@ func (s *SubscriptionService) CreateSubscriptionLink(userID int64, tariff string
 	if err != nil {
 		return "", fmt.Errorf("create initial payment: %w", err)
 	}
+
+	// Логируем весь ответ от YooKassa для отладки
+	log.Printf("=== YooKassa CreateInitialPayment Response ===")
+	log.Printf("UserID: %d, Amount: %s, IdempotenceKey: %s", userID, value, idem)
+	log.Printf("Full response: %+v", payment)
+
+	// Выводим ключевые поля
+	if id, ok := payment["id"].(string); ok {
+		log.Printf("Payment ID: %s", id)
+	}
+	if status, ok := payment["status"].(string); ok {
+		log.Printf("Payment Status: %s", status)
+	}
+	if conf, ok := payment["confirmation"].(map[string]any); ok {
+		log.Printf("Confirmation: %+v", conf)
+		if confURL, ok := conf["confirmation_url"].(string); ok {
+			log.Printf("Confirmation URL: %s", confURL)
+		}
+	}
+	log.Printf("=== End YooKassa Response ===")
 
 	// Достаем confirmation_url из ответа
 	conf, ok := payment["confirmation"].(map[string]any)
