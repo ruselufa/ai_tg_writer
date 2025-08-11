@@ -112,35 +112,25 @@ func (h *YooKassaHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// customer.id
-		cust := ""
-		if custObj, ok := payment["customer"].(map[string]any); ok {
-			log.Printf("Customer: %+v", custObj)
-			if v, ok := custObj["id"].(string); ok {
-				cust = v
-				log.Printf("Customer ID: %s", cust)
-			}
-		}
+		// Определяем customerID = telegram user ID (metadata)
+		customerID := tgUser
 
-		// Сохраняем привязку (если есть все данные)
-		if tgUser != "" && pm != "" && cust != "" {
-			log.Printf("✅ All required data found, saving binding...")
+		// Сохраняем привязку, если есть tg_user_id и payment_method.id
+		if customerID != "" && pm != "" {
+			log.Printf("✅ Required data found, saving binding (customerID = TG user)...")
 
-			// Пробуем извлечь сумму
+			// Извлекаем сумму
 			amountValue := 0.0
 			if amt, ok := payment["amount"].(map[string]any); ok {
-				log.Printf("Amount: %+v", amt)
 				if val, ok := amt["value"].(string); ok {
 					if f, err := strconv.ParseFloat(val, 64); err == nil {
 						amountValue = f
-						log.Printf("Parsed amount: %.2f", amountValue)
 					}
 				}
 			}
 
-			if uid, err := strconv.ParseInt(tgUser, 10, 64); err == nil {
-				log.Printf("Parsed User ID: %d", uid)
-				if err := h.subs.SaveYooKassaBindingAndActivate(uid, cust, pm, id, amountValue); err != nil {
+			if uid, err := strconv.ParseInt(customerID, 10, 64); err == nil {
+				if err := h.subs.SaveYooKassaBindingAndActivate(uid, customerID, pm, id, amountValue); err != nil {
 					log.Printf("❌ Save binding error: %v", err)
 				} else {
 					log.Printf("✅ Binding saved and subscription activated successfully")
@@ -149,7 +139,7 @@ func (h *YooKassaHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 				log.Printf("❌ Failed to parse TG User ID: %v", err)
 			}
 		} else {
-			log.Printf("❌ Missing required data: tgUser=%s, pm=%s, cust=%s", tgUser, pm, cust)
+			log.Printf("❌ Missing required data: tg_user_id=%s, payment_method_id=%s", customerID, pm)
 		}
 	} else {
 		log.Printf("⚠️ Payment status is not 'succeeded': %s", status)

@@ -97,3 +97,14 @@ func (c *Client) GetPayment(id string) (map[string]any, error) {
 	err := c.do("", "GET", "/payments/"+id, nil, &out)
 	return out, err
 }
+
+// CreateCustomer создает customer в YooKassa
+func (c *Client) CreateCustomer(idemKey string, email, phone string) (map[string]any, error) {
+	payload := map[string]any{
+		"email": email,
+		"phone": phone,
+	}
+	var out map[string]any
+	err := c.do(idemKey, "POST", "/customers", payload, &out)
+	return out, err
+}
