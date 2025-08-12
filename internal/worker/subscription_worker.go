@@ -29,13 +29,13 @@ func (w *SubscriptionWorker) Start(ctx context.Context) {
 // run основной цикл воркера
 func (w *SubscriptionWorker) run(ctx context.Context) {
 	if w.config.IsDevMode() {
-		log.Printf("🔄 Starting subscription worker in DEV mode (check every %s, renew every %s)", 
+		log.Printf("🔄 Starting subscription worker in DEV mode (check every %s, renew every %s)",
 			w.config.WorkerCheckInterval, w.config.SubscriptionInterval)
 	} else {
-		log.Printf("🔄 Starting subscription worker in PRODUCTION mode (check every %s, renew every %s)", 
+		log.Printf("🔄 Starting subscription worker in PRODUCTION mode (check every %s, renew every %s)",
 			w.config.WorkerCheckInterval, w.config.SubscriptionInterval)
 	}
-	
+
 	ticker := time.NewTicker(w.config.WorkerCheckInterval)
 	defer ticker.Stop()
 
@@ -53,8 +53,17 @@ func (w *SubscriptionWorker) run(ctx context.Context) {
 	}
 }
 
-// processSubscriptions обрабатывает подписки, которые нужно продлить
+// processSubscriptions обрабатывает подписки, которые нужно продлить и повторные попытки
 func (w *SubscriptionWorker) processSubscriptions() {
+	// Обрабатываем обычные продления
+	w.processRenewals()
+
+	// Обрабатываем повторные попытки
+	w.processRetries()
+}
+
+// processRenewals обрабатывает подписки для продления
+func (w *SubscriptionWorker) processRenewals() {
 	if w.config.IsDevMode() {
 		log.Println("⏰ [DEV] Checking for subscriptions due for renewal...")
 	} else {
@@ -73,19 +82,56 @@ func (w *SubscriptionWorker) processSubscriptions() {
 		} else {
 			log.Println("✅ [PROD] No subscriptions due for renewal")
 		}
+	} else {
+		log.Printf("🔄 Found %d subscription(s) due for renewal", len(subscriptions))
+
+		for _, sub := range subscriptions {
+			if err := w.subscriptionService.ProcessRecurringPayment(sub); err != nil {
+				log.Printf("❌ Failed to process recurring payment for user %d: %v", sub.UserID, err)
+			} else {
+				if w.config.IsDevMode() {
+					log.Printf("✅ [DEV] Processed recurring payment for user %d", sub.UserID)
+				} else {
+					log.Printf("✅ [PROD] Processed recurring payment for user %d", sub.UserID)
+				}
+			}
+		}
+	}
+}
+
+// processRetries обрабатывает повторные попытки оплаты
+func (w *SubscriptionWorker) processRetries() {
+	if w.config.IsDevMode() {
+		log.Println("🔄 [DEV] Checking for subscriptions due for retry...")
+	} else {
+		log.Println("🔄 [PROD] Checking for subscriptions due for retry...")
+	}
+
+	subscriptions, err := w.subscriptionService.GetSubscriptionsDueForRetry()
+	if err != nil {
+		log.Printf("❌ Error getting subscriptions for retry: %v", err)
 		return
 	}
 
-	log.Printf("🔄 Found %d subscription(s) due for renewal", len(subscriptions))
-
-	for _, sub := range subscriptions {
-		if err := w.subscriptionService.ProcessRecurringPayment(sub); err != nil {
-			log.Printf("❌ Failed to process recurring payment for user %d: %v", sub.UserID, err)
+	if len(subscriptions) == 0 {
+		if w.config.IsDevMode() {
+			log.Println("✅ [DEV] No subscriptions due for retry")
 		} else {
-			if w.config.IsDevMode() {
-				log.Printf("✅ [DEV] Processed recurring payment for user %d", sub.UserID)
+			log.Println("✅ [PROD] No subscriptions due for retry")
+		}
+	} else {
+		log.Printf("🔄 Found %d subscription(s) due for retry", len(subscriptions))
+
+		for _, sub := range subscriptions {
+			log.Printf("🔄 Retrying payment for user %d (attempt %d)", sub.UserID, sub.FailedAttempts+1)
+			if err := w.subscriptionService.ProcessRecurringPayment(sub); err != nil {
+				log.Printf("❌ Failed to retry payment for user %d: %v", sub.UserID, err)
 			} else {
-				log.Printf("✅ [PROD] Processed recurring payment for user %d", sub.UserID)
+				if w.config.IsDevMode() {
+					log.Printf("✅ [DEV] Successfully retried payment for user %d", sub.UserID)
+				} else {
+					log.Printf("✅ [PROD] Successfully retried payment for user %d", sub.UserID)
+				}
 			}
 		}
 	}

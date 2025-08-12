@@ -285,10 +285,23 @@ func (s *SubscriptionService) ProcessRecurringPayment(subscription *domain.Subsc
 
 	if err != nil {
 		log.Printf("❌ Recurring payment failed for user %d: %v", subscription.UserID, err)
-		return err
+		return s.handlePaymentFailure(subscription)
 	}
 
-	log.Printf("✅ Recurring payment created for user %d: %s", subscription.UserID, payment["id"])
+	// Проверяем статус платежа
+	status, ok := payment["status"].(string)
+	if !ok || status == "canceled" {
+		log.Printf("❌ Recurring payment canceled for user %d, status: %s", subscription.UserID, status)
+		return s.handlePaymentFailure(subscription)
+	}
+
+	log.Printf("✅ Recurring payment created for user %d: %s, status: %s", subscription.UserID, payment["id"], status)
+
+	// Если платеж успешный, сбрасываем счетчик неудач
+	if status == "succeeded" {
+		subscription.FailedAttempts = 0
+		subscription.NextRetry = nil
+	}
 
 	// Обновляем дату следующего платежа на точно такой же период
 	subscription.NextPayment = time.Now().Add(s.config.SubscriptionInterval)
@@ -326,4 +339,63 @@ func (s *SubscriptionService) GetAvailableTariffs() []domain.Tariff {
 			},
 		},
 	}
+}
+
+// handlePaymentFailure обрабатывает неудачную попытку оплаты
+func (s *SubscriptionService) handlePaymentFailure(subscription *domain.Subscription) error {
+	log.Printf("🔄 Handling payment failure for user %d, attempt %d", subscription.UserID, subscription.FailedAttempts+1)
+
+	// Увеличиваем счетчик неудачных попыток
+	subscription.FailedAttempts++
+
+	if subscription.FailedAttempts >= 3 {
+		// После 3 неудач приостанавливаем подписку
+		log.Printf("❌ Suspending subscription for user %d after 3 failed attempts", subscription.UserID)
+		if err := s.repo.SuspendSubscription(subscription.UserID); err != nil {
+			return fmt.Errorf("failed to suspend subscription: %w", err)
+		}
+
+		// Отправляем уведомление о приостановке
+		s.sendSubscriptionSuspendedMessage(subscription.UserID)
+		return nil
+	}
+
+	// Планируем следующую попытку
+	var retryInterval time.Duration
+	if s.config.IsDevMode() {
+		retryInterval = 1 * time.Minute // Для разработки
+	} else {
+		retryInterval = 1 * time.Hour // Для продакшена
+	}
+
+	nextRetry := time.Now().Add(retryInterval)
+	subscription.NextRetry = &nextRetry
+
+	// Обновляем подписку
+	if err := s.repo.Update(subscription); err != nil {
+		return fmt.Errorf("failed to update subscription: %w", err)
+	}
+
+	log.Printf("⏰ Next retry scheduled for user %d at %s", subscription.UserID, nextRetry.Format("15:04:05"))
+
+	// Отправляем уведомление о неудачной попытке
+	s.sendPaymentFailedMessage(subscription.UserID, subscription.FailedAttempts)
+	return nil
+}
+
+// GetSubscriptionsDueForRetry получает подписки для повторной попытки оплаты
+func (s *SubscriptionService) GetSubscriptionsDueForRetry() ([]*domain.Subscription, error) {
+	return s.repo.GetSubscriptionsDueForRetry()
+}
+
+// sendPaymentFailedMessage отправляет уведомление о неудачной попытке оплаты
+func (s *SubscriptionService) sendPaymentFailedMessage(userID int64, attempt int) {
+	// TODO: Реализовать отправку уведомления через бота
+	log.Printf("📨 Should send payment failed message to user %d (attempt %d)", userID, attempt)
+}
+
+// sendSubscriptionSuspendedMessage отправляет уведомление о приостановке подписки
+func (s *SubscriptionService) sendSubscriptionSuspendedMessage(userID int64) {
+	// TODO: Реализовать отправку уведомления через бота
+	log.Printf("📨 Should send subscription suspended message to user %d", userID)
 }

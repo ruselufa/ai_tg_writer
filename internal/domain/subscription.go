@@ -18,6 +18,9 @@ type Subscription struct {
 	YKCustomerID      *string    `json:"yk_customer_id"`
 	YKPaymentMethodID *string    `json:"yk_payment_method_id"`
 	YKLastPaymentID   *string    `json:"yk_last_payment_id"`
+	FailedAttempts    int        `json:"failed_attempts"`
+	NextRetry         *time.Time `json:"next_retry,omitempty"`
+	SuspendedAt       *time.Time `json:"suspended_at,omitempty"`
 }
 
 // SubscriptionStatus представляет статусы подписки
@@ -28,6 +31,7 @@ const (
 	SubscriptionStatusActive    SubscriptionStatus = "active"
 	SubscriptionStatusCancelled SubscriptionStatus = "cancelled"
 	SubscriptionStatusExpired   SubscriptionStatus = "expired"
+	SubscriptionStatusSuspended SubscriptionStatus = "suspended"
 )
 
 // Tariff представляет тариф подписки
@@ -53,6 +57,9 @@ type SubscriptionRepository interface {
 	GetActiveSubscriptions() ([]*Subscription, error)
 	UpdateYooKassaBindings(userID int64, customerID, paymentMethodID, lastPaymentID string) error
 	GetSubscriptionsDueForRenewal() ([]*Subscription, error) // Получает подписки для продления
+	GetSubscriptionsDueForRetry() ([]*Subscription, error)   // Получает подписки для повторной попытки
+	IncrementFailedAttempts(userID int64) error              // Увеличивает счетчик неудачных попыток
+	SuspendSubscription(userID int64) error                  // Приостанавливает подписку
 }
 
 // SubscriptionService интерфейс для бизнес-логики подписок

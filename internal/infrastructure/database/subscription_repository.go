@@ -35,7 +35,8 @@ func (r *SubscriptionRepository) Create(subscription *domain.Subscription) error
 
 func (r *SubscriptionRepository) GetByUserID(userID int64) (*domain.Subscription, error) {
 	query := `
-		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active
+		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id, failed_attempts, next_retry, suspended_at
 		FROM subscriptions
 		WHERE user_id = $1 AND active = true
 		ORDER BY created_at DESC
@@ -54,6 +55,12 @@ func (r *SubscriptionRepository) GetByUserID(userID int64) (*domain.Subscription
 		&subscription.CreatedAt,
 		&subscription.CancelledAt,
 		&subscription.Active,
+		&subscription.YKCustomerID,
+		&subscription.YKPaymentMethodID,
+		&subscription.YKLastPaymentID,
+		&subscription.FailedAttempts,
+		&subscription.NextRetry,
+		&subscription.SuspendedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -179,8 +186,10 @@ func (r *SubscriptionRepository) GetBySubscriptionID(subscriptionID int) (*domai
 func (r *SubscriptionRepository) Update(subscription *domain.Subscription) error {
 	query := `
 		UPDATE subscriptions
-		SET tariff = $1, status = $2, amount = $3, next_payment = $4, last_payment = $5, active = $6, cancelled_at = $7
-		WHERE id = $8`
+		SET tariff = $1, status = $2, amount = $3, next_payment = $4, last_payment = $5, active = $6, cancelled_at = $7,
+		    yk_customer_id = $8, yk_payment_method_id = $9, yk_last_payment_id = $10, 
+		    failed_attempts = $11, next_retry = $12, suspended_at = $13
+		WHERE id = $14`
 
 	_, err := r.db.Exec(
 		query,
@@ -191,6 +200,12 @@ func (r *SubscriptionRepository) Update(subscription *domain.Subscription) error
 		subscription.LastPayment,
 		subscription.Active,
 		subscription.CancelledAt,
+		subscription.YKCustomerID,
+		subscription.YKPaymentMethodID,
+		subscription.YKLastPaymentID,
+		subscription.FailedAttempts,
+		subscription.NextRetry,
+		subscription.SuspendedAt,
 		subscription.ID,
 	)
 	return err
@@ -210,7 +225,16 @@ func (r *SubscriptionRepository) UpdateNextPayment(userID int64, nextPayment tim
 
 func (r *SubscriptionRepository) Cancel(userID int64) error {
 	now := time.Now()
-	query := `UPDATE subscriptions SET active = false, cancelled_at = $1 WHERE user_id = $2 AND active = true`
+	query := `UPDATE subscriptions SET 
+		active = false, 
+		cancelled_at = $1,
+		next_payment = NULL,
+		yk_payment_method_id = NULL,
+		yk_last_payment_id = NULL,
+		failed_attempts = 0,
+		next_retry = NULL,
+		suspended_at = NULL
+		WHERE user_id = $2 AND active = true`
 	_, err := r.db.Exec(query, now, userID)
 	return err
 }
@@ -265,5 +289,75 @@ func (r *SubscriptionRepository) UpdateYooKassaBindings(userID int64, customerID
 		)`,
 		customerID, paymentMethodID, lastPaymentID, userID,
 	)
+	return err
+}
+
+// GetSubscriptionsDueForRetry получает подписки для повторной попытки оплаты
+func (r *SubscriptionRepository) GetSubscriptionsDueForRetry() ([]*domain.Subscription, error) {
+	query := `
+		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id, failed_attempts, next_retry, suspended_at
+		FROM subscriptions
+		WHERE active = true 
+		  AND status = 'active'
+		  AND failed_attempts > 0
+		  AND failed_attempts < 3
+		  AND next_retry <= NOW()
+		  AND yk_customer_id IS NOT NULL 
+		  AND yk_payment_method_id IS NOT NULL`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subscriptions []*domain.Subscription
+	for rows.Next() {
+		subscription := &domain.Subscription{}
+		err := rows.Scan(
+			&subscription.ID,
+			&subscription.UserID,
+			&subscription.SubscriptionID,
+			&subscription.Tariff,
+			&subscription.Status,
+			&subscription.Amount,
+			&subscription.NextPayment,
+			&subscription.LastPayment,
+			&subscription.CreatedAt,
+			&subscription.CancelledAt,
+			&subscription.Active,
+			&subscription.YKCustomerID,
+			&subscription.YKPaymentMethodID,
+			&subscription.YKLastPaymentID,
+			&subscription.FailedAttempts,
+			&subscription.NextRetry,
+			&subscription.SuspendedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		subscriptions = append(subscriptions, subscription)
+	}
+
+	return subscriptions, nil
+}
+
+// IncrementFailedAttempts увеличивает счетчик неудачных попыток
+func (r *SubscriptionRepository) IncrementFailedAttempts(userID int64) error {
+	query := `UPDATE subscriptions SET failed_attempts = failed_attempts + 1 WHERE user_id = $1 AND active = true`
+	_, err := r.db.Exec(query, userID)
+	return err
+}
+
+// SuspendSubscription приостанавливает подписку после 3 неудачных попыток
+func (r *SubscriptionRepository) SuspendSubscription(userID int64) error {
+	now := time.Now()
+	query := `UPDATE subscriptions SET 
+		status = 'suspended',
+		suspended_at = $1,
+		next_retry = NULL
+		WHERE user_id = $2 AND active = true`
+	_, err := r.db.Exec(query, now, userID)
 	return err
 }
