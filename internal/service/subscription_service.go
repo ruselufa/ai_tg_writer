@@ -63,14 +63,21 @@ func (s *SubscriptionService) GetUserSubscription(userID int64) (*domain.Subscri
 
 // CancelSubscription отменяет подписку
 func (s *SubscriptionService) CancelSubscription(userID int64) error {
+	log.Printf("🔄 Starting subscription cancellation for user %d", userID)
+
 	subscription, err := s.repo.GetByUserID(userID)
 	if err != nil {
+		log.Printf("❌ Error getting subscription for user %d: %v", userID, err)
 		return fmt.Errorf("error getting subscription: %w", err)
 	}
 
 	if subscription == nil {
+		log.Printf("❌ Subscription not found for user %d", userID)
 		return fmt.Errorf("subscription not found")
 	}
+
+	log.Printf("✅ Found subscription for user %d: ID=%d, Status=%s, Active=%v",
+		userID, subscription.ID, subscription.Status, subscription.Active)
 
 	// Временно отключаем интеграцию с Prodamus
 	// TODO: Добавить интеграцию с новым платежным модулем
@@ -79,10 +86,13 @@ func (s *SubscriptionService) CancelSubscription(userID int64) error {
 	// }
 
 	// Отменяем подписку в базе данных
+	log.Printf("🔄 Cancelling subscription in database for user %d", userID)
 	if err := s.repo.Cancel(userID); err != nil {
+		log.Printf("❌ Error cancelling subscription in database for user %d: %v", userID, err)
 		return fmt.Errorf("error cancelling subscription in database: %w", err)
 	}
 
+	log.Printf("✅ Subscription cancelled successfully for user %d", userID)
 	return nil
 }
 

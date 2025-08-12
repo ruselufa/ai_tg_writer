@@ -81,6 +81,10 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleBuyPremium(bot, callback)
 	case "confirm_purchase":
 		ih.handleConfirmPurchase(bot, callback)
+	case "cancel_subscription":
+		ih.handleCancelSubscription(bot, callback)
+	case "confirm_cancel_subscription":
+		ih.handleConfirmCancelSubscription(bot, callback)
 	case "styling_settings":
 		ih.handleStylingSettings(bot, callback)
 	case "test_formatting":
@@ -1073,6 +1077,65 @@ func (ih *InlineHandler) handleConfirmPurchase(bot *Bot, callback *tgbotapi.Call
 	)
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// handleCancelSubscription обрабатывает отмену подписки
+func (ih *InlineHandler) handleCancelSubscription(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	// Создаем кнопки подтверждения
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Да, отменить", "confirm_cancel_subscription"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Нет, оставить", "subscription"),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"⚠️ *Подтверждение отмены подписки*\n\n"+
+			"Вы уверены, что хотите отменить подписку?\n"+
+			"После отмены вы потеряете доступ к премиум функциям.",
+	)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = &keyboard
+
+	bot.Send(msg)
+}
+
+// handleConfirmCancelSubscription подтверждает отмену подписки
+func (ih *InlineHandler) handleConfirmCancelSubscription(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Отменяем подписку
+	err := bot.SubscriptionService.CancelSubscription(userID)
+	if err != nil {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка при отмене подписки. Попробуйте позже.",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Создаем сообщение об успешной отмене с кнопкой возврата в меню
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"✅ *Подписка отменена*\n\n"+
+			"Ваша подписка была успешно отменена.\n"+
+			"Для возобновления доступа оформите подписку заново.",
+	)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = &keyboard
+
 	bot.Send(msg)
 }
 
