@@ -44,9 +44,9 @@ func (s *SubscriptionService) CreateSubscription(userID int64, tariff string, am
 		Tariff:         tariff,
 		Status:         string(domain.SubscriptionStatusPending),
 		Amount:         amount,
-		NextPayment:    time.Now().Add(s.config.SubscriptionInterval), // Используем конфигурацию
-		LastPayment:    time.Now(),
-		Active:         false, // Станет true после успешной оплаты
+		NextPayment:    time.Now().UTC().Add(s.config.SubscriptionInterval), // Используем UTC время
+		LastPayment:    time.Now().UTC(),                                    // Используем UTC время
+		Active:         false,                                               // Станет true после успешной оплаты
 	}
 
 	if err := s.repo.Create(subscription); err != nil {
@@ -113,9 +113,9 @@ func (s *SubscriptionService) ProcessPayment(userID int64, amount float64) error
 
 	// Обновляем статус и даты
 	subscription.Status = string(domain.SubscriptionStatusActive)
-	subscription.LastPayment = time.Now()
-	subscription.NextPayment = time.Now().Add(s.config.SubscriptionInterval) // Используем конфигурацию
-	subscription.Active = true                                               // Активируем подписку
+	subscription.LastPayment = time.Now().UTC()                                    // Используем UTC время
+	subscription.NextPayment = time.Now().UTC().Add(s.config.SubscriptionInterval) // Используем UTC время
+	subscription.Active = true                                                     // Активируем подписку
 
 	if err := s.repo.Update(subscription); err != nil {
 		return fmt.Errorf("error updating subscription: %w", err)
@@ -179,7 +179,7 @@ func (s *SubscriptionService) CreateSubscriptionLink(userID int64, tariff string
 
 	// Формируем платеж с сохранением метода
 	value := fmt.Sprintf("%.2f", amount)
-	idem := fmt.Sprintf("%d-%d", userID, time.Now().UnixNano())
+	idem := fmt.Sprintf("%d-%d", userID, time.Now().UTC().UnixNano()) // Используем UTC время
 	returnURL := getenv("YK_RETURN_URL_ADDRESS", "")
 
 	log.Printf("💳 Calling YooKassa CreateInitialPayment...")
@@ -264,7 +264,7 @@ func (s *SubscriptionService) ProcessRecurringPayment(subscription *domain.Subsc
 		subscription.UserID, subscription.ID)
 
 	// Создаем идемпотентный ключ
-	idempotenceKey := fmt.Sprintf("%d-recurring-%d", subscription.UserID, time.Now().Unix())
+	idempotenceKey := fmt.Sprintf("%d-recurring-%d", subscription.UserID, time.Now().UTC().Unix()) // Используем UTC время
 
 	// Создаем рекуррентный платеж
 	payment, err := s.yk.CreateRecurringPayment(
@@ -304,8 +304,8 @@ func (s *SubscriptionService) ProcessRecurringPayment(subscription *domain.Subsc
 	}
 
 	// Обновляем дату следующего платежа на точно такой же период
-	subscription.NextPayment = time.Now().Add(s.config.SubscriptionInterval)
-	subscription.LastPayment = time.Now()
+	subscription.NextPayment = time.Now().UTC().Add(s.config.SubscriptionInterval) // Используем UTC время
+	subscription.LastPayment = time.Now().UTC()                                    // Используем UTC время
 	if err := s.repo.Update(subscription); err != nil {
 		log.Printf("❌ Failed to update next payment date: %v", err)
 		return err
@@ -368,7 +368,7 @@ func (s *SubscriptionService) handlePaymentFailure(subscription *domain.Subscrip
 		retryInterval = 1 * time.Hour // Для продакшена
 	}
 
-	nextRetry := time.Now().Add(retryInterval)
+	nextRetry := time.Now().UTC().Add(retryInterval) // Используем UTC время
 	subscription.NextRetry = &nextRetry
 
 	// Обновляем подписку
@@ -386,6 +386,11 @@ func (s *SubscriptionService) handlePaymentFailure(subscription *domain.Subscrip
 // GetSubscriptionsDueForRetry получает подписки для повторной попытки оплаты
 func (s *SubscriptionService) GetSubscriptionsDueForRetry() ([]*domain.Subscription, error) {
 	return s.repo.GetSubscriptionsDueForRetry()
+}
+
+// GetAllActiveSubscriptions получает все активные подписки для диагностики
+func (s *SubscriptionService) GetAllActiveSubscriptions() ([]*domain.Subscription, error) {
+	return s.repo.GetAllActiveSubscriptions()
 }
 
 // sendPaymentFailedMessage отправляет уведомление о неудачной попытке оплаты

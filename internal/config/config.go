@@ -7,31 +7,34 @@ import (
 )
 
 type Config struct {
-	Mode                    string
-	SubscriptionInterval    time.Duration
-	WorkerCheckInterval     time.Duration
+	Mode                 string
+	SubscriptionInterval time.Duration
+	WorkerCheckInterval  time.Duration
+	GracePeriodDays      int // Количество дней grace period для подписок
 }
 
 // NewConfig создает новую конфигурацию на основе переменных окружения
 func NewConfig() *Config {
 	mode := getenv("MODE", "production")
-	
+
 	var subscriptionInterval time.Duration
 	var workerCheckInterval time.Duration
-	
+	gracePeriodDays := getenvInt("GRACE_PERIOD_DAYS", 3) // По умолчанию 3 дня
+
 	switch mode {
 	case "dev", "development":
-		subscriptionInterval = 1 * time.Minute  // Для разработки - 1 минута
-		workerCheckInterval = 30 * time.Second  // Проверяем каждые 30 секунд
+		subscriptionInterval = 1 * time.Minute // Для разработки - 1 минута
+		workerCheckInterval = 30 * time.Second // Проверяем каждые 30 секунд
 	default: // production
 		subscriptionInterval = 30 * 24 * time.Hour // 30 дней
-		workerCheckInterval = 5 * time.Minute       // Проверяем каждые 5 минут
+		workerCheckInterval = 5 * time.Minute      // Проверяем каждые 5 минут
 	}
-	
+
 	return &Config{
-		Mode:                    mode,
-		SubscriptionInterval:    subscriptionInterval,
-		WorkerCheckInterval:     workerCheckInterval,
+		Mode:                 mode,
+		SubscriptionInterval: subscriptionInterval,
+		WorkerCheckInterval:  workerCheckInterval,
+		GracePeriodDays:      gracePeriodDays,
 	}
 }
 

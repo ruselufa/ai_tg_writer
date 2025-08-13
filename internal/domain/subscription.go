@@ -60,6 +60,7 @@ type SubscriptionRepository interface {
 	GetSubscriptionsDueForRetry() ([]*Subscription, error)   // Получает подписки для повторной попытки
 	IncrementFailedAttempts(userID int64) error              // Увеличивает счетчик неудачных попыток
 	SuspendSubscription(userID int64) error                  // Приостанавливает подписку
+	GetAllActiveSubscriptions() ([]*Subscription, error)     // Получает все активные подписки для диагностики
 }
 
 // SubscriptionService интерфейс для бизнес-логики подписок
@@ -70,4 +71,11 @@ type SubscriptionService interface {
 	ProcessPayment(userID int64, amount float64) error
 	IsUserSubscribed(userID int64) (bool, error)
 	GetUserTariff(userID int64) (string, error)
+	CreateSubscriptionLink(userID int64, tariff string, amount float64) (string, error)
+	SaveYooKassaBindingAndActivate(userID int64, customerID, paymentMethodID, paymentID string, amount float64) error
+	GetSubscriptionsDueForRenewal() ([]*Subscription, error)
+	ProcessRecurringPayment(subscription *Subscription) error
+	GetAvailableTariffs() []Tariff
+	GetSubscriptionsDueForRetry() ([]*Subscription, error)
+	GetAllActiveSubscriptions() ([]*Subscription, error) // Получает все активные подписки для диагностики
 }

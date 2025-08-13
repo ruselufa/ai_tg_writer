@@ -64,10 +64,40 @@ func (w *SubscriptionWorker) processSubscriptions() {
 
 // processRenewals обрабатывает подписки для продления
 func (w *SubscriptionWorker) processRenewals() {
+	now := time.Now()
+	utcNow := time.Now().UTC()
 	if w.config.IsDevMode() {
-		log.Println("⏰ [DEV] Checking for subscriptions due for renewal...")
+		log.Printf("⏰ [DEV] Checking for subscriptions due for renewal... [NOW: %s, UTC: %s]",
+			now.Format("2006-01-02 15:04:05"), utcNow.Format("2006-01-02 15:04:05"))
 	} else {
-		log.Println("⏰ [PROD] Checking for subscriptions due for renewal...")
+		log.Printf("⏰ [PROD] Checking for subscriptions due for renewal... [NOW: %s, UTC: %s]",
+			now.Format("2006-01-02 15:04:05"), utcNow.Format("2006-01-02 15:04:05"))
+	}
+
+	// Диагностика: показываем все активные подписки
+	allActive, err := w.subscriptionService.GetAllActiveSubscriptions()
+	if err != nil {
+		log.Printf("⚠️ [DEBUG] Error getting all active subscriptions: %v", err)
+	} else {
+		log.Printf("🔍 [DEBUG] All active subscriptions (%d):", len(allActive))
+		for _, sub := range allActive {
+			nextPaymentStr := "NULL"
+			if sub.NextPayment != (time.Time{}) {
+				nextPaymentStr = sub.NextPayment.Format("2006-01-02 15:04:05")
+				// Проверяем, прошло ли время next_payment
+				isPast := sub.NextPayment.Before(now)
+				isPastUTC := sub.NextPayment.Before(utcNow)
+				timeDiff := now.Sub(sub.NextPayment)
+				timeDiffUTC := utcNow.Sub(sub.NextPayment)
+				log.Printf("   ID=%d, UserID=%d, Status=%s, NextPayment=%s, IsPast(local)=%v, IsPast(UTC)=%v, TimeDiff(local)=%v, TimeDiff(UTC)=%v, Active=%v, YKCustomerID=%v, YKPaymentMethodID=%v",
+					sub.ID, sub.UserID, sub.Status, nextPaymentStr, isPast, isPastUTC, timeDiff, timeDiffUTC, sub.Active,
+					sub.YKCustomerID != nil, sub.YKPaymentMethodID != nil)
+			} else {
+				log.Printf("   ID=%d, UserID=%d, Status=%s, NextPayment=%s, Active=%v, YKCustomerID=%v, YKPaymentMethodID=%v",
+					sub.ID, sub.UserID, sub.Status, nextPaymentStr, sub.Active,
+					sub.YKCustomerID != nil, sub.YKPaymentMethodID != nil)
+			}
+		}
 	}
 
 	subscriptions, err := w.subscriptionService.GetSubscriptionsDueForRenewal()
@@ -78,9 +108,9 @@ func (w *SubscriptionWorker) processRenewals() {
 
 	if len(subscriptions) == 0 {
 		if w.config.IsDevMode() {
-			log.Println("✅ [DEV] No subscriptions due for renewal")
+			log.Printf("✅ [DEV] No subscriptions due for renewal [NOW: %s]", now.Format("2006-01-02 15:04:05"))
 		} else {
-			log.Println("✅ [PROD] No subscriptions due for renewal")
+			log.Printf("✅ [PROD] No subscriptions due for renewal [NOW: %s]", now.Format("2006-01-02 15:04:05"))
 		}
 	} else {
 		log.Printf("🔄 Found %d subscription(s) due for renewal", len(subscriptions))
@@ -101,10 +131,11 @@ func (w *SubscriptionWorker) processRenewals() {
 
 // processRetries обрабатывает повторные попытки оплаты
 func (w *SubscriptionWorker) processRetries() {
+	now := time.Now()
 	if w.config.IsDevMode() {
-		log.Println("🔄 [DEV] Checking for subscriptions due for retry...")
+		log.Printf("🔄 [DEV] Checking for subscriptions due for retry... [NOW: %s]", now.Format("2006-01-02 15:04:05"))
 	} else {
-		log.Println("🔄 [PROD] Checking for subscriptions due for retry...")
+		log.Printf("🔄 [PROD] Checking for subscriptions due for retry... [NOW: %s]", now.Format("2006-01-02 15:04:05"))
 	}
 
 	subscriptions, err := w.subscriptionService.GetSubscriptionsDueForRetry()
@@ -115,9 +146,9 @@ func (w *SubscriptionWorker) processRetries() {
 
 	if len(subscriptions) == 0 {
 		if w.config.IsDevMode() {
-			log.Println("✅ [DEV] No subscriptions due for retry")
+			log.Printf("✅ [DEV] No subscriptions due for retry [NOW: %s]", now.Format("2006-01-02 15:04:05"))
 		} else {
-			log.Println("✅ [PROD] No subscriptions due for retry")
+			log.Printf("✅ [PROD] No subscriptions due for retry [NOW: %s]", now.Format("2006-01-02 15:04:05"))
 		}
 	} else {
 		log.Printf("🔄 Found %d subscription(s) due for retry", len(subscriptions))
