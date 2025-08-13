@@ -15,6 +15,10 @@ type SubscriptionService struct {
 	repo   domain.SubscriptionRepository
 	yk     *yookassa.Client
 	config *config.Config
+	bot    interface {
+		SendPaymentFailedMessage(userID int64, attempt int) error
+		SendSubscriptionSuspendedMessage(userID int64) error
+	} // Интерфейс для отправки сообщений в Telegram
 }
 
 func NewSubscriptionService(repo domain.SubscriptionRepository, ykClient *yookassa.Client, cfg *config.Config) *SubscriptionService {
@@ -22,6 +26,20 @@ func NewSubscriptionService(repo domain.SubscriptionRepository, ykClient *yookas
 		repo:   repo,
 		yk:     ykClient,
 		config: cfg,
+		bot:    nil, // Будет установлен позже
+	}
+}
+
+// NewSubscriptionServiceWithBot создает сервис с ботом для отправки сообщений
+func NewSubscriptionServiceWithBot(repo domain.SubscriptionRepository, ykClient *yookassa.Client, cfg *config.Config, bot interface {
+	SendPaymentFailedMessage(userID int64, attempt int) error
+	SendSubscriptionSuspendedMessage(userID int64) error
+}) *SubscriptionService {
+	return &SubscriptionService{
+		repo:   repo,
+		yk:     ykClient,
+		config: cfg,
+		bot:    bot,
 	}
 }
 
@@ -85,7 +103,7 @@ func (s *SubscriptionService) CancelSubscription(userID int64) error {
 	// 	return fmt.Errorf("error cancelling subscription in Prodamus: %w", err)
 	// }
 
-	// Отменяем подписку в базе данных
+	// Отменяем подписку в базе данных (включая очистку полей неудачных попыток)
 	log.Printf("🔄 Cancelling subscription in database for user %d", userID)
 	if err := s.repo.Cancel(userID); err != nil {
 		log.Printf("❌ Error cancelling subscription in database for user %d: %v", userID, err)
@@ -297,29 +315,33 @@ func (s *SubscriptionService) ProcessRecurringPayment(subscription *domain.Subsc
 
 	log.Printf("✅ Recurring payment created for user %d: %s, status: %s", subscription.UserID, payment["id"], status)
 
-	// Если платеж успешный, сбрасываем счетчик неудач
+	// Если платеж успешный, сбрасываем счетчик неудач и восстанавливаем подписку
 	if status == "succeeded" {
+		log.Printf("✅ Payment succeeded for user %d, resetting failure counters and restoring subscription", subscription.UserID)
+
+		// Сбрасываем все поля неудачных попыток
 		subscription.FailedAttempts = 0
 		subscription.NextRetry = nil
+		subscription.SuspendedAt = nil
+		subscription.Active = true
+		subscription.Status = "active"
+
+		// Обновляем параметры успешного платежа
+		subscription.LastPayment = time.Now().UTC()
+		subscription.NextPayment = time.Now().UTC().Add(s.config.SubscriptionInterval)
+
+		// Обновляем подписку в базе
+		if err := s.repo.Update(subscription); err != nil {
+			log.Printf("❌ Failed to update subscription after successful payment: %v", err)
+			return err
+		}
+
+		log.Printf("✅ Subscription restored for user %d after successful payment", subscription.UserID)
+		return nil
 	}
 
-	// Обновляем дату следующего платежа на точно такой же период
-	subscription.NextPayment = time.Now().UTC().Add(s.config.SubscriptionInterval) // Используем UTC время
-	subscription.LastPayment = time.Now().UTC()                                    // Используем UTC время
-	if err := s.repo.Update(subscription); err != nil {
-		log.Printf("❌ Failed to update next payment date: %v", err)
-		return err
-	}
-
-	if s.config.IsDevMode() {
-		log.Printf("📅 [DEV] Next payment scheduled for user %d at %s",
-			subscription.UserID, subscription.NextPayment.Format("15:04:05"))
-	} else {
-		log.Printf("📅 [PROD] Next payment scheduled for user %d at %s",
-			subscription.UserID, subscription.NextPayment.Format("2006-01-02 15:04:05"))
-	}
-
-	return nil
+	// Если платеж не успешный, обрабатываем неудачу
+	return s.handlePaymentFailure(subscription)
 }
 
 // GetAvailableTariffs возвращает доступные тарифы
@@ -371,12 +393,14 @@ func (s *SubscriptionService) handlePaymentFailure(subscription *domain.Subscrip
 	nextRetry := time.Now().UTC().Add(retryInterval) // Используем UTC время
 	subscription.NextRetry = &nextRetry
 
-	// Обновляем подписку
+	// Обновляем подписку ОДИН РАЗ со всеми изменениями
 	if err := s.repo.Update(subscription); err != nil {
+		log.Printf("❌ Failed to update subscription after payment failure: %v", err)
 		return fmt.Errorf("failed to update subscription: %w", err)
 	}
 
-	log.Printf("⏰ Next retry scheduled for user %d at %s", subscription.UserID, nextRetry.Format("15:04:05"))
+	log.Printf("⏰ Next retry scheduled for user %d at %s (attempt %d)",
+		subscription.UserID, nextRetry.Format("15:04:05"), subscription.FailedAttempts)
 
 	// Отправляем уведомление о неудачной попытке
 	s.sendPaymentFailedMessage(subscription.UserID, subscription.FailedAttempts)
@@ -393,14 +417,71 @@ func (s *SubscriptionService) GetAllActiveSubscriptions() ([]*domain.Subscriptio
 	return s.repo.GetAllActiveSubscriptions()
 }
 
+// RetryPayment пытается списать деньги с текущего метода оплаты
+func (s *SubscriptionService) RetryPayment(userID int64) error {
+	subscription, err := s.repo.GetByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("error getting subscription: %w", err)
+	}
+
+	if subscription == nil {
+		return fmt.Errorf("subscription not found")
+	}
+
+	if subscription.FailedAttempts >= 2 {
+		return fmt.Errorf("subscription is suspended after 3 failed attempts")
+	}
+
+	// Сбрасываем счетчик неудач и время повторной попытки
+	subscription.FailedAttempts = 0
+	subscription.NextRetry = nil
+
+	// Обновляем подписку
+	if err := s.repo.Update(subscription); err != nil {
+		return fmt.Errorf("failed to update subscription: %w", err)
+	}
+
+	// Пытаемся списать деньги
+	return s.ProcessRecurringPayment(subscription)
+}
+
+// ChangePaymentMethod создает новую ссылку для оплаты с новым методом
+func (s *SubscriptionService) ChangePaymentMethod(userID int64) (string, error) {
+	subscription, err := s.repo.GetByUserID(userID)
+	if err != nil {
+		return "", fmt.Errorf("error getting subscription: %w", err)
+	}
+
+	if subscription == nil {
+		return "", fmt.Errorf("subscription not found")
+	}
+
+	// Создаем новую ссылку для оплаты
+	return s.CreateSubscriptionLink(userID, subscription.Tariff, subscription.Amount)
+}
+
 // sendPaymentFailedMessage отправляет уведомление о неудачной попытке оплаты
 func (s *SubscriptionService) sendPaymentFailedMessage(userID int64, attempt int) {
-	// TODO: Реализовать отправку уведомления через бота
-	log.Printf("📨 Should send payment failed message to user %d (attempt %d)", userID, attempt)
+	if s.bot != nil {
+		if err := s.bot.SendPaymentFailedMessage(userID, attempt); err != nil {
+			log.Printf("❌ Failed to send payment failed message to user %d: %v", userID, err)
+		} else {
+			log.Printf("📨 Payment failed message sent to user %d (attempt %d)", userID, attempt)
+		}
+	} else {
+		log.Printf("📨 Should send payment failed message to user %d (attempt %d) - bot not configured", userID, attempt)
+	}
 }
 
 // sendSubscriptionSuspendedMessage отправляет уведомление о приостановке подписки
 func (s *SubscriptionService) sendSubscriptionSuspendedMessage(userID int64) {
-	// TODO: Реализовать отправку уведомления через бота
-	log.Printf("📨 Should send subscription suspended message to user %d", userID)
+	if s.bot != nil {
+		if err := s.bot.SendSubscriptionSuspendedMessage(userID); err != nil {
+			log.Printf("❌ Failed to send subscription suspended message to user %d: %v", userID, err)
+		} else {
+			log.Printf("📨 Subscription suspended message sent to user %d", userID)
+		}
+	} else {
+		log.Printf("📨 Should send subscription suspended message to user %d - bot not configured", userID)
+	}
 }

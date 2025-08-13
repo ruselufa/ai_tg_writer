@@ -109,13 +109,15 @@ func (r *SubscriptionRepository) GetAnyByUserID(userID int64) (*domain.Subscript
 
 func (r *SubscriptionRepository) GetSubscriptionsDueForRenewal() ([]*domain.Subscription, error) {
 	// Теперь все время хранится в UTC, поэтому используем просто NOW()
+	// Добавляем фильтр failed_attempts = 0, чтобы не обрабатывать подписки с неудачными попытками
 	query := `
 		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
-		       yk_customer_id, yk_payment_method_id, yk_last_payment_id
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id, failed_attempts, next_retry
 		FROM subscriptions
 		WHERE active = true 
 		  AND status = 'active'
 		  AND next_payment <= NOW()
+		  AND failed_attempts = 0
 		  AND yk_customer_id IS NOT NULL 
 		  AND yk_payment_method_id IS NOT NULL`
 
@@ -173,7 +175,7 @@ func (r *SubscriptionRepository) GetSubscriptionsDueForRenewal() ([]*domain.Subs
 
 	// Сначала проверим все активные подписки без фильтров
 	debugQuery := `
-		SELECT id, user_id, tariff, status, active, next_payment, yk_customer_id, yk_payment_method_id
+		SELECT id, user_id, tariff, status, active, next_payment, yk_customer_id, yk_payment_method_id, failed_attempts, next_retry
 		FROM subscriptions
 		WHERE active = true`
 
@@ -190,8 +192,10 @@ func (r *SubscriptionRepository) GetSubscriptionsDueForRenewal() ([]*domain.Subs
 			var active bool
 			var nextPayment sql.NullTime
 			var ykCustomerID, ykPaymentMethodID sql.NullString
+			var failedAttempts int
+			var nextRetry sql.NullTime
 
-			err := debugRows.Scan(&id, &userID, &tariff, &status, &active, &nextPayment, &ykCustomerID, &ykPaymentMethodID)
+			err := debugRows.Scan(&id, &userID, &tariff, &status, &active, &nextPayment, &ykCustomerID, &ykPaymentMethodID, &failedAttempts, &nextRetry)
 			if err != nil {
 				log.Printf("⚠️ [SQL DEBUG] Debug row scan error: %v", err)
 				continue
@@ -202,9 +206,14 @@ func (r *SubscriptionRepository) GetSubscriptionsDueForRenewal() ([]*domain.Subs
 				nextPaymentStr = nextPayment.Time.Format("2006-01-02 15:04:05")
 			}
 
-			log.Printf("   ID=%d, UserID=%d, Status=%s, Active=%v, NextPayment=%s, YKCustomerID=%v, YKPaymentMethodID=%v",
+			nextRetryStr := "NULL"
+			if nextRetry.Valid {
+				nextRetryStr = nextRetry.Time.Format("2006-01-02 15:04:05")
+			}
+
+			log.Printf("   ID=%d, UserID=%d, Status=%s, Active=%v, NextPayment=%s, YKCustomerID=%v, YKPaymentMethodID=%v, FailedAttempts=%d, NextRetry=%s",
 				id, userID, status, active, nextPaymentStr,
-				ykCustomerID.Valid, ykPaymentMethodID.Valid)
+				ykCustomerID.Valid, ykPaymentMethodID.Valid, failedAttempts, nextRetryStr)
 		}
 	}
 
@@ -233,15 +242,17 @@ func (r *SubscriptionRepository) GetSubscriptionsDueForRenewal() ([]*domain.Subs
 			&subscription.YKCustomerID,
 			&subscription.YKPaymentMethodID,
 			&subscription.YKLastPaymentID,
+			&subscription.FailedAttempts,
+			&subscription.NextRetry,
 		)
 		if err != nil {
 			log.Printf("❌ [SQL DEBUG] Row scan error: %v", err)
 			return nil, err
 		}
 		subscriptions = append(subscriptions, subscription)
-		log.Printf("🔍 [SQL DEBUG] Found subscription: ID=%d, UserID=%d, NextPayment=%s, Active=%v, Status=%s",
+		log.Printf("🔍 [SQL DEBUG] Found subscription: ID=%d, UserID=%d, NextPayment=%s, Active=%v, Status=%s, FailedAttempts=%d, NextRetry=%v",
 			subscription.ID, subscription.UserID, subscription.NextPayment.Format("2006-01-02 15:04:05"),
-			subscription.Active, subscription.Status)
+			subscription.Active, subscription.Status, subscription.FailedAttempts, subscription.NextRetry)
 	}
 
 	log.Printf("🔍 [SQL DEBUG] Total subscriptions found: %d", len(subscriptions))
@@ -474,7 +485,11 @@ func (r *SubscriptionRepository) SuspendSubscription(userID int64) error {
 	now := time.Now().UTC() // Используем UTC время
 	query := `UPDATE subscriptions SET 
 		status = 'suspended',
+		active = false,
+		tariff = 'free',
+		next_payment = NULL,
 		suspended_at = $1,
+		failed_attempts = 0,
 		next_retry = NULL
 		WHERE user_id = $2 AND active = true`
 	_, err := r.db.Exec(query, now, userID)

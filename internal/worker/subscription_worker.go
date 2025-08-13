@@ -89,13 +89,24 @@ func (w *SubscriptionWorker) processRenewals() {
 				isPastUTC := sub.NextPayment.Before(utcNow)
 				timeDiff := now.Sub(sub.NextPayment)
 				timeDiffUTC := utcNow.Sub(sub.NextPayment)
-				log.Printf("   ID=%d, UserID=%d, Status=%s, NextPayment=%s, IsPast(local)=%v, IsPast(UTC)=%v, TimeDiff(local)=%v, TimeDiff(UTC)=%v, Active=%v, YKCustomerID=%v, YKPaymentMethodID=%v",
+
+				nextRetryStr := "NULL"
+				if sub.NextRetry != nil {
+					nextRetryStr = sub.NextRetry.Format("2006-01-02 15:04:05")
+				}
+
+				log.Printf("   ID=%d, UserID=%d, Status=%s, NextPayment=%s, IsPast(local)=%v, IsPast(UTC)=%v, TimeDiff(local)=%v, TimeDiff(UTC)=%v, Active=%v, YKCustomerID=%v, YKPaymentMethodID=%v, FailedAttempts=%d, NextRetry=%s",
 					sub.ID, sub.UserID, sub.Status, nextPaymentStr, isPast, isPastUTC, timeDiff, timeDiffUTC, sub.Active,
-					sub.YKCustomerID != nil, sub.YKPaymentMethodID != nil)
+					sub.YKCustomerID != nil, sub.YKPaymentMethodID != nil, sub.FailedAttempts, nextRetryStr)
 			} else {
-				log.Printf("   ID=%d, UserID=%d, Status=%s, NextPayment=%s, Active=%v, YKCustomerID=%v, YKPaymentMethodID=%v",
+				nextRetryStr := "NULL"
+				if sub.NextRetry != nil {
+					nextRetryStr = sub.NextRetry.Format("2006-01-02 15:04:05")
+				}
+
+				log.Printf("   ID=%d, UserID=%d, Status=%s, NextPayment=%s, Active=%v, YKCustomerID=%v, YKPaymentMethodID=%v, FailedAttempts=%d, NextRetry=%s",
 					sub.ID, sub.UserID, sub.Status, nextPaymentStr, sub.Active,
-					sub.YKCustomerID != nil, sub.YKPaymentMethodID != nil)
+					sub.YKCustomerID != nil, sub.YKPaymentMethodID != nil, sub.FailedAttempts, nextRetryStr)
 			}
 		}
 	}

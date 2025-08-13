@@ -70,11 +70,23 @@ func main() {
 
 	// Инициализируем клиента YooKassa
 	ykClient := yookassa.New()
-	subscriptionService := service.NewSubscriptionService(subscriptionRepo, ykClient, cfg)
+
+	// Создаем временный сервис подписок для создания SubscriptionHandler
+	tempSubscriptionService := service.NewSubscriptionService(subscriptionRepo, ykClient, cfg)
+
+	// Создаем SubscriptionHandler для отправки сообщений
+	subscriptionHandler := bot.NewSubscriptionHandler(tempSubscriptionService)
+
+	// Создаем сервис подписок с ботом для отправки сообщений
+	subscriptionService := service.NewSubscriptionServiceWithBot(subscriptionRepo, ykClient, cfg, subscriptionHandler)
+
 	fmt.Println("Сервис подписок инициализирован")
 
 	// Создаем обработчики
 	customBot := bot.NewBotWithSubscriptionService(botAPI, db, subscriptionService)
+
+	// Устанавливаем бота в SubscriptionHandler для отправки сообщений
+	subscriptionHandler.SetBot(customBot)
 
 	// Создаем HTTP-сервер для обработки платежей
 	httpServer := api.NewServer("8080")

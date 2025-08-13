@@ -78,4 +78,6 @@ type SubscriptionService interface {
 	GetAvailableTariffs() []Tariff
 	GetSubscriptionsDueForRetry() ([]*Subscription, error)
 	GetAllActiveSubscriptions() ([]*Subscription, error) // Получает все активные подписки для диагностики
+	RetryPayment(userID int64) error                     // Повторная попытка списания с текущего метода
+	ChangePaymentMethod(userID int64) (string, error)    // Смена метода оплаты
 }
