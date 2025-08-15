@@ -150,7 +150,23 @@ func (s *SubscriptionService) IsUserSubscribed(userID int64) (bool, error) {
 		return false, fmt.Errorf("error checking subscription: %w", err)
 	}
 
-	return subscription != nil && subscription.Active && subscription.Status == string(domain.SubscriptionStatusActive), nil
+	// Подписка считается активной если:
+	// 1. Она существует
+	// 2. Поле active = true (подписка не истекла)
+	// 3. Статус 'active' или 'cancelled' (отмененная но еще активная до конца периода)
+	// 4. Не приостановлена (suspended)
+	if subscription == nil || !subscription.Active {
+		return false, nil
+	}
+
+	// Проверяем, что подписка не приостановлена
+	if subscription.Status == string(domain.SubscriptionStatusSuspended) {
+		return false, nil
+	}
+
+	// Подписка активна если статус 'active' или 'cancelled' (отмененная но еще работает)
+	return subscription.Status == string(domain.SubscriptionStatusActive) ||
+		subscription.Status == string(domain.SubscriptionStatusCancelled), nil
 }
 
 // GetUserTariff получает тариф пользователя
@@ -458,6 +474,11 @@ func (s *SubscriptionService) ChangePaymentMethod(userID int64) (string, error) 
 
 	// Создаем новую ссылку для оплаты
 	return s.CreateSubscriptionLink(userID, subscription.Tariff, subscription.Amount)
+}
+
+// CancelExpiredSubscription полностью отменяет истекшую отмененную подписку
+func (s *SubscriptionService) CancelExpiredSubscription(userID int64) error {
+	return s.repo.CancelExpired(userID)
 }
 
 // sendPaymentFailedMessage отправляет уведомление о неудачной попытке оплаты

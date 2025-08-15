@@ -326,7 +326,55 @@ func sendProfileMessage(bot *bot.Bot, chatID int64, userID int64) {
 }
 
 func sendSubscriptionMessage(bot *bot.Bot, chatID int64) {
-	text := `💎 Подписка
+	// Получаем информацию о подписке пользователя
+	userID := chatID // В Telegram chatID обычно равен userID для личных чатов
+
+	subscription, err := bot.SubscriptionService.GetUserSubscription(userID)
+	if err != nil {
+		log.Printf("Ошибка получения подписки для пользователя %d: %v", userID, err)
+		subscription = nil
+	}
+
+	var text string
+	var keyboard tgbotapi.InlineKeyboardMarkup
+
+	if subscription != nil && subscription.Active {
+		// У пользователя есть активная подписка
+		statusText := "Активна"
+		if subscription.Status == "cancelled" {
+			statusText = "Отменена (работает до конца периода)"
+		}
+
+		nextPaymentText := "Не указана"
+		if subscription.NextPayment != (time.Time{}) {
+			nextPaymentText = subscription.NextPayment.Format("02.01.2006 15:04")
+		}
+
+		text = fmt.Sprintf(`💎 *Ваша подписка*
+
+📊 Тариф: %s
+✅ Статус: %s
+⏰ Следующий платеж: %s
+💰 Стоимость: %.0f₽/месяц
+
+✨ Ваши возможности:
+• Неограниченное количество сообщений
+• Приоритетная обработка
+• Расширенные возможности редактирования
+• Доступ к эксклюзивным функциям`,
+			subscription.Tariff, statusText, nextPaymentText, subscription.Amount)
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	} else {
+		// У пользователя нет активной подписки
+		text = `💎 *Подписка*
 
 📊 Текущий тариф: Бесплатный
 ⏰ Срок действия: Бессрочно
@@ -338,15 +386,19 @@ func sendSubscriptionMessage(bot *bot.Bot, chatID int64) {
 • Доступ к эксклюзивным функциям
 
 💳 Стоимость: 990₽/месяц`
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💰 Купить подписку", "buy_premium"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
-		),
-	)
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💰 Купить подписку", "buy_premium"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	}
+
 	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }

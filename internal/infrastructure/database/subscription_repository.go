@@ -334,7 +334,22 @@ func (r *SubscriptionRepository) UpdateNextPayment(userID int64, nextPayment tim
 func (r *SubscriptionRepository) Cancel(userID int64) error {
 	now := time.Now().UTC() // Используем UTC время
 	query := `UPDATE subscriptions SET 
-		active = false, 
+		status = 'cancelled',
+		cancelled_at = $1,
+		failed_attempts = 0,
+		next_retry = NULL,
+		suspended_at = NULL
+		WHERE user_id = $2 AND active = true`
+	_, err := r.db.Exec(query, now, userID)
+	return err
+}
+
+// CancelExpired полностью отменяет подписку когда оплаченный период истек
+func (r *SubscriptionRepository) CancelExpired(userID int64) error {
+	now := time.Now().UTC() // Используем UTC время
+	query := `UPDATE subscriptions SET 
+		active = false,
+		status = 'expired',
 		cancelled_at = $1,
 		next_payment = NULL,
 		yk_payment_method_id = NULL,
@@ -342,7 +357,7 @@ func (r *SubscriptionRepository) Cancel(userID int64) error {
 		failed_attempts = 0,
 		next_retry = NULL,
 		suspended_at = NULL
-		WHERE user_id = $2 AND active = true`
+		WHERE user_id = $2 AND status = 'cancelled' AND next_payment <= $1`
 	_, err := r.db.Exec(query, now, userID)
 	return err
 }

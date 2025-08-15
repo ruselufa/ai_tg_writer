@@ -61,6 +61,7 @@ type SubscriptionRepository interface {
 	IncrementFailedAttempts(userID int64) error              // Увеличивает счетчик неудачных попыток
 	SuspendSubscription(userID int64) error                  // Приостанавливает подписку
 	GetAllActiveSubscriptions() ([]*Subscription, error)     // Получает все активные подписки для диагностики
+	CancelExpired(userID int64) error                        // Полностью отменяет подписку когда период истек
 }
 
 // SubscriptionService интерфейс для бизнес-логики подписок
@@ -80,4 +81,5 @@ type SubscriptionService interface {
 	GetAllActiveSubscriptions() ([]*Subscription, error) // Получает все активные подписки для диагностики
 	RetryPayment(userID int64) error                     // Повторная попытка списания с текущего метода
 	ChangePaymentMethod(userID int64) (string, error)    // Смена метода оплаты
+	CancelExpiredSubscription(userID int64) error        // Полная отмена истекшей отмененной подписки
 }

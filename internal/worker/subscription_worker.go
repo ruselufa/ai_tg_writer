@@ -60,6 +60,9 @@ func (w *SubscriptionWorker) processSubscriptions() {
 
 	// Обрабатываем повторные попытки
 	w.processRetries()
+
+	// Обрабатываем истекшие отмененные подписки
+	w.processExpiredCancelledSubscriptions()
 }
 
 // processRenewals обрабатывает подписки для продления
@@ -175,6 +178,50 @@ func (w *SubscriptionWorker) processRetries() {
 					log.Printf("✅ [PROD] Successfully retried payment for user %d", sub.UserID)
 				}
 			}
+		}
+	}
+}
+
+// processExpiredCancelledSubscriptions обрабатывает истекшие отмененные подписки
+func (w *SubscriptionWorker) processExpiredCancelledSubscriptions() {
+	now := time.Now()
+	if w.config.IsDevMode() {
+		log.Printf("⏰ [DEV] Checking for expired cancelled subscriptions... [NOW: %s]", now.Format("2006-01-02 15:04:05"))
+	} else {
+		log.Printf("⏰ [PROD] Checking for expired cancelled subscriptions... [NOW: %s]", now.Format("2006-01-02 15:04:05"))
+	}
+
+	// Получаем все активные подписки со статусом 'cancelled'
+	allActive, err := w.subscriptionService.GetAllActiveSubscriptions()
+	if err != nil {
+		log.Printf("❌ Error getting all active subscriptions: %v", err)
+		return
+	}
+
+	expiredCount := 0
+	for _, sub := range allActive {
+		// Проверяем только отмененные подписки
+		if sub.Status == "cancelled" && sub.NextPayment.Before(now) {
+			log.Printf("🔄 Found expired cancelled subscription for user %d (expired at %s)",
+				sub.UserID, sub.NextPayment.Format("2006-01-02 15:04:05"))
+
+			// Полностью отменяем подписку
+			if err := w.subscriptionService.CancelExpiredSubscription(sub.UserID); err != nil {
+				log.Printf("❌ Failed to cancel expired subscription for user %d: %v", sub.UserID, err)
+			} else {
+				log.Printf("✅ Successfully cancelled expired subscription for user %d", sub.UserID)
+				expiredCount++
+			}
+		}
+	}
+
+	if expiredCount > 0 {
+		log.Printf("✅ Processed %d expired cancelled subscription(s)", expiredCount)
+	} else {
+		if w.config.IsDevMode() {
+			log.Printf("✅ [DEV] No expired cancelled subscriptions found")
+		} else {
+			log.Printf("✅ [PROD] No expired cancelled subscriptions found")
 		}
 	}
 }

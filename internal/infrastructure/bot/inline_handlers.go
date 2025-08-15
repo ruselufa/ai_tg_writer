@@ -85,6 +85,10 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleCancelSubscription(bot, callback)
 	case "confirm_cancel_subscription":
 		ih.handleConfirmCancelSubscription(bot, callback)
+	case "retry_payment":
+		ih.handleRetryPayment(bot, callback)
+	case "change_payment_method":
+		ih.handleChangePaymentMethod(bot, callback)
 	case "styling_settings":
 		ih.handleStylingSettings(bot, callback)
 	case "test_formatting":
@@ -1094,8 +1098,10 @@ func (ih *InlineHandler) handleCancelSubscription(bot *Bot, callback *tgbotapi.C
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		"⚠️ *Подтверждение отмены подписки*\n\n"+
-			"Вы уверены, что хотите отменить подписку?\n"+
-			"После отмены вы потеряете доступ к премиум функциям.",
+			"Вы уверены, что хотите отменить подписку?\n\n"+
+			"ℹ️ *Важно:* Ваша подписка будет работать до конца оплаченного периода.\n"+
+			"После этого вы потеряете доступ к премиум функциям.\n\n"+
+			"💡 Вы можете возобновить подписку в любое время.",
 	)
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
@@ -1130,12 +1136,87 @@ func (ih *InlineHandler) handleConfirmCancelSubscription(bot *Bot, callback *tgb
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		"✅ *Подписка отменена*\n\n"+
-			"Ваша подписка была успешно отменена.\n"+
-			"Для возобновления доступа оформите подписку заново.",
+			"Ваша подписка была успешно отменена.\n\n"+
+			"ℹ️ *Важно:* Подписка продолжит работать до конца оплаченного периода.\n"+
+			"После этого вы потеряете доступ к премиум функциям.\n\n"+
+			"💡 Для возобновления доступа оформите подписку заново.",
 	)
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
 
+	bot.Send(msg)
+}
+
+// handleRetryPayment обрабатывает кнопку повторной оплаты
+func (ih *InlineHandler) handleRetryPayment(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Пытаемся повторить списание с текущего метода оплаты
+	err := bot.SubscriptionService.RetryPayment(userID)
+	if err != nil {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка при повторной попытке списания: "+err.Error(),
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Отправляем сообщение об успешном запуске повторной попытки
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"🔄 *Повторная попытка списания*\n\n"+
+			"Запущена повторная попытка списания с вашей карты.\n"+
+			"Вы получите уведомление о результате.",
+	)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// handleChangePaymentMethod обрабатывает кнопку изменения способа оплаты
+func (ih *InlineHandler) handleChangePaymentMethod(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Получаем новую ссылку для оплаты с новым методом
+	paymentURL, err := bot.SubscriptionService.ChangePaymentMethod(userID)
+	if err != nil {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка при создании ссылки для новой карты: "+err.Error(),
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Создаем кнопку для перехода к оплате с новой картой
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("💳 Оплатить новой картой", paymentURL),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"💳 *Новый способ оплаты*\n\n"+
+			"Нажмите кнопку ниже для оплаты новой картой.\n"+
+			"После успешной оплаты ваша подписка будет восстановлена.",
+	)
+	msg.ParseMode = "Markdown"
+	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
 }
 
