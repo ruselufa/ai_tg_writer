@@ -129,6 +129,11 @@ func (s *SubscriptionService) ProcessPayment(userID int64, amount float64) error
 	log.Printf("📝 Activating subscription for user %d: ID=%d, Status=%s, Active=%v",
 		userID, subscription.ID, subscription.Status, subscription.Active)
 
+	// Сбрасываем все счетчики неудачных попыток при успешной оплате
+	subscription.FailedAttempts = 0
+	subscription.NextRetry = nil
+	subscription.SuspendedAt = nil
+
 	// Обновляем статус и даты
 	subscription.Status = string(domain.SubscriptionStatusActive)
 	subscription.LastPayment = time.Now().UTC()                                    // Используем UTC время
@@ -139,7 +144,7 @@ func (s *SubscriptionService) ProcessPayment(userID int64, amount float64) error
 		return fmt.Errorf("error updating subscription: %w", err)
 	}
 
-	log.Printf("✅ Subscription activated successfully for user %d", userID)
+	log.Printf("✅ Subscription activated successfully for user %d (counters reset)", userID)
 	return nil
 }
 
@@ -450,6 +455,9 @@ func (s *SubscriptionService) RetryPayment(userID int64) error {
 		return fmt.Errorf("subscription is suspended after 3 failed attempts")
 	}
 
+	log.Printf("🔄 Starting retry payment for user %d (previous failed attempts: %d)",
+		userID, subscription.FailedAttempts)
+
 	// Сбрасываем счетчик неудач и время повторной попытки
 	subscription.FailedAttempts = 0
 	subscription.NextRetry = nil
@@ -458,6 +466,8 @@ func (s *SubscriptionService) RetryPayment(userID int64) error {
 	if err := s.repo.Update(subscription); err != nil {
 		return fmt.Errorf("failed to update subscription: %w", err)
 	}
+
+	log.Printf("✅ Counters reset for user %d, starting recurring payment", userID)
 
 	// Пытаемся списать деньги
 	return s.ProcessRecurringPayment(subscription)
