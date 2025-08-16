@@ -1151,31 +1151,78 @@ func (ih *InlineHandler) handleConfirmCancelSubscription(bot *Bot, callback *tgb
 func (ih *InlineHandler) handleRetryPayment(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
 
-	// Пытаемся повторить списание с текущего метода оплаты
-	err := bot.SubscriptionService.RetryPayment(userID)
+	// Получаем информацию о подписке
+	subscription, err := bot.SubscriptionService.GetUserSubscription(userID)
 	if err != nil {
-		msg := tgbotapi.NewEditMessageText(
-			callback.Message.Chat.ID,
-			callback.Message.MessageID,
-			"❌ Ошибка при повторной попытке списания: "+err.Error(),
-		)
-		bot.Send(msg)
-		return
+		log.Printf("❌ Error getting subscription for user %d: %v", userID, err)
+		subscription = nil
 	}
 
-	// Отправляем сообщение об успешном запуске повторной попытки
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
-		),
-	)
+	var messageText string
+	var keyboard tgbotapi.InlineKeyboardMarkup
+
+	if subscription != nil && subscription.Status == "suspended" {
+		// Подписка приостановлена - предлагаем восстановить
+		messageText = "🔄 *Восстановление подписки*\n\n" +
+			"Ваша подписка была приостановлена после 3 неудачных попыток списания.\n\n" +
+			"Для восстановления доступа используйте новую карту:"
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💳 Использовать новую карту", "change_payment_method"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	} else if subscription != nil && subscription.FailedAttempts > 0 {
+		// Подписка имеет неудачные попытки - пытаемся повторить
+		messageText = "🔄 *Повторная попытка списания*\n\n" +
+			"Запускаем повторную попытку списания с вашей карты..."
+
+		// Пытаемся повторить списание
+		err := bot.SubscriptionService.RetryPayment(userID)
+		if err != nil {
+			messageText = "❌ *Ошибка повторной попытки*\n\n" +
+				"Не удалось запустить повторную попытку: " + err.Error() + "\n\n" +
+				"Попробуйте позже или используйте новую карту."
+
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("💳 Использовать новую карту", "change_payment_method"),
+				),
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+				),
+			)
+		} else {
+			messageText = "🔄 *Повторная попытка списания*\n\n" +
+				"Запущена повторная попытка списания с вашей карты.\n" +
+				"Вы получите уведомление о результате."
+
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+				),
+			)
+		}
+	} else {
+		// Подписка не имеет неудачных попыток
+		messageText = "ℹ️ *Информация*\n\n" +
+			"У вашей подписки нет неудачных попыток списания.\n" +
+			"Если у вас возникли проблемы, обратитесь в поддержку."
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	}
 
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
-		"🔄 *Повторная попытка списания*\n\n"+
-			"Запущена повторная попытка списания с вашей карты.\n"+
-			"Вы получите уведомление о результате.",
+		messageText,
 	)
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard
@@ -1186,34 +1233,66 @@ func (ih *InlineHandler) handleRetryPayment(bot *Bot, callback *tgbotapi.Callbac
 func (ih *InlineHandler) handleChangePaymentMethod(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
 
-	// Получаем новую ссылку для оплаты с новым методом
-	paymentURL, err := bot.SubscriptionService.ChangePaymentMethod(userID)
+	// Получаем информацию о подписке
+	subscription, err := bot.SubscriptionService.GetUserSubscription(userID)
 	if err != nil {
-		msg := tgbotapi.NewEditMessageText(
-			callback.Message.Chat.ID,
-			callback.Message.MessageID,
-			"❌ Ошибка при создании ссылки для новой карты: "+err.Error(),
-		)
-		bot.Send(msg)
-		return
+		log.Printf("❌ Error getting subscription for user %d: %v", userID, err)
+		subscription = nil
 	}
 
-	// Создаем кнопку для перехода к оплате с новой картой
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("💳 Оплатить новой картой", paymentURL),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
-		),
-	)
+	var messageText string
+	var keyboard tgbotapi.InlineKeyboardMarkup
+
+	if subscription != nil && subscription.Status == "suspended" {
+		// Подписка приостановлена - предлагаем восстановить
+		messageText = "💳 *Восстановление подписки*\n\n" +
+			"Ваша подписка была приостановлена после 3 неудачных попыток списания.\n\n" +
+			"Для восстановления доступа используйте новую карту:"
+
+		// Получаем новую ссылку для оплаты
+		paymentURL, err := bot.SubscriptionService.ChangePaymentMethod(userID)
+		if err != nil {
+			messageText = "❌ *Ошибка восстановления*\n\n" +
+				"Не удалось создать ссылку для оплаты: " + err.Error() + "\n\n" +
+				"Попробуйте позже или обратитесь в поддержку."
+
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🔄 Попробовать снова", "change_payment_method"),
+				),
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+				),
+			)
+		} else {
+			keyboard = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonURL("💳 Оплатить новой картой", paymentURL),
+				),
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+				),
+			)
+		}
+	} else {
+		// Подписка активна или не найдена - предлагаем стандартную покупку
+		messageText = "💳 *Изменение способа оплаты*\n\n" +
+			"Для изменения способа оплаты перейдите к покупке премиум подписки."
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💳 Перейти к оплате", "buy_premium"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+			),
+		)
+	}
 
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
-		"💳 *Новый способ оплаты*\n\n"+
-			"Нажмите кнопку ниже для оплаты новой картой.\n"+
-			"После успешной оплаты ваша подписка будет восстановлена.",
+		messageText,
 	)
 	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = &keyboard

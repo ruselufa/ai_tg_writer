@@ -328,7 +328,10 @@ func (h *SubscriptionHandler) SendSubscriptionSuspendedMessage(userID int64) err
 	// Создаем кнопки для восстановления подписки
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💳 Использовать новую карту", "change_payment_method"),
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Попробовать снова", "retry_payment"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💳 Использовать новый способ оплаты", "change_payment_method"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),

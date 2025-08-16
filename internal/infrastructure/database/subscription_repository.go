@@ -73,7 +73,7 @@ func (r *SubscriptionRepository) GetByUserID(userID int64) (*domain.Subscription
 func (r *SubscriptionRepository) GetAnyByUserID(userID int64) (*domain.Subscription, error) {
 	query := `
 		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
-		       yk_customer_id, yk_payment_method_id, yk_last_payment_id
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id, failed_attempts, next_retry, suspended_at
 		FROM subscriptions
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -95,6 +95,9 @@ func (r *SubscriptionRepository) GetAnyByUserID(userID int64) (*domain.Subscript
 		&subscription.YKCustomerID,
 		&subscription.YKPaymentMethodID,
 		&subscription.YKLastPaymentID,
+		&subscription.FailedAttempts,
+		&subscription.NextRetry,
+		&subscription.SuspendedAt,
 	)
 
 	if err != nil {

@@ -435,7 +435,8 @@ func (s *SubscriptionService) GetAllActiveSubscriptions() ([]*domain.Subscriptio
 
 // RetryPayment пытается списать деньги с текущего метода оплаты
 func (s *SubscriptionService) RetryPayment(userID int64) error {
-	subscription, err := s.repo.GetByUserID(userID)
+	// Используем GetAnyByUserID чтобы найти подписку независимо от статуса active
+	subscription, err := s.repo.GetAnyByUserID(userID)
 	if err != nil {
 		return fmt.Errorf("error getting subscription: %w", err)
 	}
@@ -444,7 +445,8 @@ func (s *SubscriptionService) RetryPayment(userID int64) error {
 		return fmt.Errorf("subscription not found")
 	}
 
-	if subscription.FailedAttempts >= 2 {
+	// Проверяем, что подписка не приостановлена
+	if subscription.Status == string(domain.SubscriptionStatusSuspended) {
 		return fmt.Errorf("subscription is suspended after 3 failed attempts")
 	}
 
@@ -463,7 +465,8 @@ func (s *SubscriptionService) RetryPayment(userID int64) error {
 
 // ChangePaymentMethod создает новую ссылку для оплаты с новым методом
 func (s *SubscriptionService) ChangePaymentMethod(userID int64) (string, error) {
-	subscription, err := s.repo.GetByUserID(userID)
+	// Используем GetAnyByUserID чтобы найти подписку независимо от статуса active
+	subscription, err := s.repo.GetAnyByUserID(userID)
 	if err != nil {
 		return "", fmt.Errorf("error getting subscription: %w", err)
 	}
