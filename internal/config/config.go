@@ -27,7 +27,7 @@ func NewConfig() *Config {
 		workerCheckInterval = 30 * time.Second // Проверяем каждые 30 секунд
 	default: // production
 		subscriptionInterval = 30 * 24 * time.Hour // 30 дней
-		workerCheckInterval = 5 * time.Minute      // Проверяем каждые 5 минут
+		workerCheckInterval = 15 * time.Minute     // Проверяем каждые 5 минут
 	}
 
 	return &Config{
