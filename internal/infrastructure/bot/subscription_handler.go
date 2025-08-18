@@ -66,7 +66,7 @@ func (h *SubscriptionHandler) HandleSubscriptionCommand(bot *Bot, message *tgbot
 		// Создаем кнопки для управления подпиской
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 			),
 		)
 
@@ -146,7 +146,7 @@ func (h *SubscriptionHandler) handleCancelSubscription(bot *Bot, callback *tgbot
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		"⚠️ *Подтверждение отмены подписки*\n\n"+
-			"Вы уверены, что хотите отменить подписку?\n"+
+			"Вы уверены, что хотите отменить подписку и отвязать карту?\n"+
 			"После отмены вы потеряете доступ к премиум функциям.",
 	)
 	msg.ParseMode = "Markdown"
@@ -243,7 +243,7 @@ func (h *SubscriptionHandler) handleChangePaymentMethod(bot *Bot, callback *tgbo
 			tgbotapi.NewInlineKeyboardButtonURL("💳 Оплатить новой картой", paymentURL),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 		),
 	)
 
@@ -292,7 +292,7 @@ func (h *SubscriptionHandler) SendPaymentFailedMessage(userID int64, attempt int
 			tgbotapi.NewInlineKeyboardButtonData("💳 Использовать новую карту", "change_payment_method"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 		),
 	)
 
@@ -334,7 +334,7 @@ func (h *SubscriptionHandler) SendSubscriptionSuspendedMessage(userID int64) err
 			tgbotapi.NewInlineKeyboardButtonData("💳 Использовать новый способ оплаты", "change_payment_method"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 		),
 	)
 

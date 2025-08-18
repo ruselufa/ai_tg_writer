@@ -828,7 +828,7 @@ func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuer
 
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
@@ -892,7 +892,7 @@ func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.Callbac
 
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку", "cancel_subscription"),
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
@@ -1098,7 +1098,7 @@ func (ih *InlineHandler) handleCancelSubscription(bot *Bot, callback *tgbotapi.C
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
 		"⚠️ *Подтверждение отмены подписки*\n\n"+
-			"Вы уверены, что хотите отменить подписку?\n\n"+
+			"Вы уверены, что хотите отменить подписку и отвязать карту?\n\n"+
 			"ℹ️ *Важно:* Ваша подписка будет работать до конца оплаченного периода.\n"+
 			"После этого вы потеряете доступ к премиум функциям.\n\n"+
 			"💡 Вы можете возобновить подписку в любое время.",

@@ -341,7 +341,9 @@ func (r *SubscriptionRepository) Cancel(userID int64) error {
 		cancelled_at = $1,
 		failed_attempts = 0,
 		next_retry = NULL,
-		suspended_at = NULL
+		suspended_at = NULL,
+		yk_payment_method_id = NULL,
+		yk_last_payment_id = NULL
 		WHERE user_id = $2 AND active = true`
 	_, err := r.db.Exec(query, now, userID)
 	return err
