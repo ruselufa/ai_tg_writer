@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -122,42 +124,114 @@ func main() {
 	fmt.Println("Настройки обновлений установлены")
 	updates := botAPI.GetUpdatesChan(updateConfig)
 	fmt.Println("Обновления получены")
+
+	// Создаем семафор для ограничения одновременных обработок
+	const maxConcurrentHandlers = 10
+	semaphore := make(chan struct{}, maxConcurrentHandlers)
+	fmt.Printf("🚦 Семафор создан с лимитом %d одновременных обработок\n", maxConcurrentHandlers)
+
+	// Счетчик активных обработок
+	var activeHandlers int32
+
+	// Статистика производительности
+	var totalProcessed int64
+	var totalProcessingTime time.Duration
+	var timeMutex sync.Mutex
+
+	// Запускаем мониторинг производительности
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			processed := atomic.LoadInt64(&totalProcessed)
+			active := atomic.LoadInt32(&activeHandlers)
+			avgTime := time.Duration(0)
+			if processed > 0 {
+				avgTime = totalProcessingTime / time.Duration(processed)
+			}
+
+			log.Printf("📊 [Статистика] Обработано: %d, Активных: %d/%d, Среднее время: %v",
+				processed, active, maxConcurrentHandlers, avgTime)
+		}
+	}()
+
 	// Обрабатываем сообщения
 	for update := range updates {
-		// Обрабатываем callback от инлайн-кнопок
-		if update.CallbackQuery != nil {
-			inlineHandler.HandleCallback(customBot, update.CallbackQuery)
-			continue
-		}
-		fmt.Println("Обработка сообщения")
-		if update.Message == nil {
-			continue
-		}
-		fmt.Println("Обработка голосового сообщения")
-		// Обрабатываем голосовые сообщения через MessageHandler
-		if update.Message.Voice != nil {
-			messageHandler.HandleMessage(customBot, update.Message)
-			continue
-		}
-		fmt.Println("Обработка текстового сообщения")
-		// Сначала обрабатываем команды (они имеют приоритет)
-		if update.Message.IsCommand() {
-			// Если пользователь ввёл команду, сбрасываем специальные состояния
-			userID := update.Message.From.ID
-			state := stateManager.GetState(userID)
-			if state.WaitingForEmail {
-				state.WaitingForEmail = false
-			}
-			handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
-			continue
-		}
+		// Получаем слот для обработки
+		semaphore <- struct{}{}
+		atomic.AddInt32(&activeHandlers, 1)
+		currentActive := atomic.LoadInt32(&activeHandlers)
 
-		// Затем проверяем специальные состояния (email, etc) через MessageHandler
-		if handled := messageHandler.HandleMessage(customBot, update.Message); handled {
-			continue // сообщение уже обработано, не продолжаем
-		}
-		// Обрабатываем обычные текстовые сообщения
-		handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
+		log.Printf("🚦 [Семафор] Получен слот. Активных обработок: %d/%d", currentActive, maxConcurrentHandlers)
+
+		go func(update tgbotapi.Update, handlerID int32) {
+			startTime := time.Now()
+			defer func() {
+				<-semaphore // Освобождаем слот после обработки
+				atomic.AddInt32(&activeHandlers, -1)
+				duration := time.Since(startTime)
+
+				// Обновляем статистику
+				atomic.AddInt64(&totalProcessed, 1)
+				// Примечание: totalProcessingTime нужно обновлять безопасно
+				timeMutex.Lock()
+				totalProcessingTime += duration
+				timeMutex.Unlock()
+
+				log.Printf("🚦 [Семафор] Обработчик %d завершен за %v. Активных обработок: %d/%d",
+					handlerID, duration, atomic.LoadInt32(&activeHandlers), maxConcurrentHandlers)
+			}()
+
+			log.Printf("🚦 [Семафор] Обработчик %d начал работу", handlerID)
+
+			// Добавляем информацию о пользователе
+			if update.Message != nil && update.Message.From != nil {
+				log.Printf("👤 [Семафор] Обработчик %d работает с пользователем %d (@%s)",
+					handlerID, update.Message.From.ID, update.Message.From.UserName)
+			} else if update.CallbackQuery != nil && update.CallbackQuery.From != nil {
+				log.Printf("👤 [Семафор] Обработчик %d работает с пользователем %d (@%s)",
+					handlerID, update.CallbackQuery.From.ID, update.CallbackQuery.From.UserName)
+			}
+
+			// Обрабатываем callback от инлайн-кнопок
+			if update.CallbackQuery != nil {
+				inlineHandler.HandleCallback(customBot, update.CallbackQuery)
+				return
+			}
+
+			fmt.Println("Обработка сообщения")
+			if update.Message == nil {
+				return
+			}
+
+			fmt.Println("Обработка голосового сообщения")
+			// Обрабатываем голосовые сообщения через MessageHandler
+			if update.Message.Voice != nil {
+				messageHandler.HandleMessage(customBot, update.Message)
+				return
+			}
+
+			fmt.Println("Обработка текстового сообщения")
+			// Сначала обрабатываем команды (они имеют приоритет)
+			if update.Message.IsCommand() {
+				// Если пользователь ввёл команду, сбрасываем специальные состояния
+				userID := update.Message.From.ID
+				state := stateManager.GetState(userID)
+				if state.WaitingForEmail {
+					state.WaitingForEmail = false
+				}
+				handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
+				return
+			}
+
+			// Затем проверяем специальные состояния (email, etc) через MessageHandler
+			if handled := messageHandler.HandleMessage(customBot, update.Message); handled {
+				return // сообщение уже обработано, не продолжаем
+			}
+			// Обрабатываем обычные текстовые сообщения
+			handleMessage(customBot, update.Message, voiceHandler, stateManager, inlineHandler)
+		}(update, currentActive)
 	}
 }
 
