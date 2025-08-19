@@ -24,7 +24,17 @@ func New() *Client {
 		ShopID:    os.Getenv("YK_SHOP_ID"),
 		SecretKey: os.Getenv("YK_SECRET_KEY"),
 		BaseURL:   "https://api.yookassa.ru/v3",
-		HTTP:      &http.Client{Timeout: 15 * time.Second},
+		HTTP: &http.Client{
+			Timeout: 15 * time.Second,
+			// Добавляем пул соединений для лучшей производительности при параллельных запросах
+			Transport: &http.Transport{
+				MaxIdleConns:        100,              // Максимум неактивных соединений
+				MaxIdleConnsPerHost: 10,               // Максимум неактивных соединений на хост
+				IdleConnTimeout:     90 * time.Second, // Время жизни неактивного соединения
+				DisableCompression:  false,            // Включаем сжатие для экономии трафика
+				ForceAttemptHTTP2:   true,             // Принудительно используем HTTP/2
+			},
+		},
 	}
 }
 

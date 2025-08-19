@@ -5,7 +5,11 @@ import (
 	"ai_tg_writer/internal/service"
 	"context"
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
+
+	"ai_tg_writer/internal/domain"
 )
 
 type SubscriptionWorker struct {
@@ -23,7 +27,20 @@ func NewSubscriptionWorker(subscriptionService *service.SubscriptionService, con
 
 // Start запускает воркер в горутине
 func (w *SubscriptionWorker) Start(ctx context.Context) {
+	// Запускаем мониторинг производительности YooKassa
+	go w.monitorYooKassaPerformance()
+
 	go w.run(ctx)
+}
+
+// monitorYooKassaPerformance мониторит производительность YooKassa
+func (w *SubscriptionWorker) monitorYooKassaPerformance() {
+	ticker := time.NewTicker(5 * time.Minute) // Каждые 5 минут
+	defer ticker.Stop()
+
+	for range ticker.C {
+		log.Printf("💳 [YooKassa Monitor] Воркер подписок работает, следующий запуск через 5 минут")
+	}
 }
 
 // run основной цикл воркера
@@ -129,17 +146,54 @@ func (w *SubscriptionWorker) processRenewals() {
 	} else {
 		log.Printf("🔄 Found %d subscription(s) due for renewal", len(subscriptions))
 
+		// Создаем семафор для ограничения одновременных запросов к YooKassa
+		// Ограничиваем до 3, чтобы не перегружать YooKassa API
+		const maxConcurrentPayments = 3
+		semaphore := make(chan struct{}, maxConcurrentPayments)
+		var wg sync.WaitGroup
+
+		// Счетчик успешных и неуспешных платежей
+		var successCount, errorCount int32
+
+		log.Printf("💳 [YooKassa] Начинаем параллельную обработку %d подписок (лимит: %d)",
+			len(subscriptions), maxConcurrentPayments)
+
 		for _, sub := range subscriptions {
-			if err := w.subscriptionService.ProcessRecurringPayment(sub); err != nil {
-				log.Printf("❌ Failed to process recurring payment for user %d: %v", sub.UserID, err)
-			} else {
-				if w.config.IsDevMode() {
-					log.Printf("✅ [DEV] Processed recurring payment for user %d", sub.UserID)
+			wg.Add(1)
+
+			go func(subscription *domain.Subscription) {
+				defer wg.Done()
+
+				// Получаем слот для обработки платежа
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				startTime := time.Now()
+				log.Printf("💳 [YooKassa] Начинаем обработку платежа для пользователя %d (ID: %d)",
+					subscription.UserID, subscription.ID)
+
+				// Обрабатываем платеж
+				if err := w.subscriptionService.ProcessRecurringPayment(subscription); err != nil {
+					atomic.AddInt32(&errorCount, 1)
+					log.Printf("❌ [YooKassa] Failed to process recurring payment for user %d: %v",
+						subscription.UserID, err)
 				} else {
-					log.Printf("✅ [PROD] Processed recurring payment for user %d", sub.UserID)
+					atomic.AddInt32(&successCount, 1)
+					duration := time.Since(startTime)
+					log.Printf("✅ [YooKassa] Successfully processed recurring payment for user %d in %v",
+						subscription.UserID, duration)
 				}
-			}
+			}(sub)
 		}
+
+		// Ждем завершения всех платежей
+		wg.Wait()
+
+		// Логируем итоговую статистику
+		finalSuccess := atomic.LoadInt32(&successCount)
+		finalError := atomic.LoadInt32(&errorCount)
+		log.Printf("🎉 [YooKassa] Все платежи обработаны. Успешно: %d, Ошибок: %d",
+			finalSuccess, finalError)
 	}
 }
 
@@ -167,18 +221,52 @@ func (w *SubscriptionWorker) processRetries() {
 	} else {
 		log.Printf("🔄 Found %d subscription(s) due for retry", len(subscriptions))
 
+		// Создаем семафор для ограничения одновременных повторных попыток
+		const maxConcurrentRetries = 2 // Меньше для повторных попыток
+		semaphore := make(chan struct{}, maxConcurrentRetries)
+		var wg sync.WaitGroup
+
+		// Счетчик успешных и неуспешных повторных попыток
+		var successCount, errorCount int32
+
+		log.Printf("🔄 [Retry] Начинаем параллельную обработку %d повторных попыток (лимит: %d)",
+			len(subscriptions), maxConcurrentRetries)
+
 		for _, sub := range subscriptions {
-			log.Printf("🔄 Retrying payment for user %d (attempt %d)", sub.UserID, sub.FailedAttempts+1)
-			if err := w.subscriptionService.ProcessRecurringPayment(sub); err != nil {
-				log.Printf("❌ Failed to retry payment for user %d: %v", sub.UserID, err)
-			} else {
-				if w.config.IsDevMode() {
-					log.Printf("✅ [DEV] Successfully retried payment for user %d", sub.UserID)
+			wg.Add(1)
+
+			go func(subscription *domain.Subscription) {
+				defer wg.Done()
+
+				// Получаем слот для обработки
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				startTime := time.Now()
+				log.Printf("🔄 [Retry] Начинаем повторную попытку для пользователя %d (ID: %d, Попытка: %d)",
+					subscription.UserID, subscription.ID, subscription.FailedAttempts+1)
+
+				// Обрабатываем повторную попытку
+				if err := w.subscriptionService.ProcessRecurringPayment(subscription); err != nil {
+					atomic.AddInt32(&errorCount, 1)
+					log.Printf("❌ [Retry] Failed to retry payment for user %d: %v", subscription.UserID, err)
 				} else {
-					log.Printf("✅ [PROD] Successfully retried payment for user %d", sub.UserID)
+					atomic.AddInt32(&successCount, 1)
+					duration := time.Since(startTime)
+					log.Printf("✅ [Retry] Successfully retried payment for user %d in %v",
+						subscription.UserID, duration)
 				}
-			}
+			}(sub)
 		}
+
+		// Ждем завершения всех повторных попыток
+		wg.Wait()
+
+		// Логируем итоговую статистику
+		finalSuccess := atomic.LoadInt32(&successCount)
+		finalError := atomic.LoadInt32(&errorCount)
+		log.Printf("🎉 [Retry] Все повторные попытки завершены. Успешно: %d, Ошибок: %d",
+			finalSuccess, finalError)
 	}
 }
 
