@@ -1,18 +1,18 @@
 package bot
 
 import (
-	"fmt"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/service"
+	"fmt"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Bot представляет собой обертку над tgbotapi.BotAPI с дополнительной функциональностью
 type Bot struct {
-	API          *tgbotapi.BotAPI
-	StateManager *StateManager
-	DB           *database.DB
+	API                 *tgbotapi.BotAPI
+	StateManager        *StateManager
+	DB                  *database.DB
 	SubscriptionService *service.SubscriptionService
 }
 
@@ -25,8 +25,8 @@ func NewBot(api *tgbotapi.BotAPI, db *database.DB) *Bot {
 
 func NewBotWithSubscriptionService(api *tgbotapi.BotAPI, db *database.DB, subscriptionService *service.SubscriptionService) *Bot {
 	return &Bot{
-		API:                api,
-		DB:                 db,
+		API:                 api,
+		DB:                  db,
 		SubscriptionService: subscriptionService,
 	}
 }
@@ -95,14 +95,11 @@ func (b *Bot) CreateMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("---------------", "no_action"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 			tgbotapi.NewInlineKeyboardButtonData("💎 Моя подписка", "subscription"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			// tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
+			tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
 			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help"),
 		),
 		// tgbotapi.NewInlineKeyboardRow(
@@ -125,9 +122,6 @@ func (b *Bot) CreateContentTypeKeyboard() tgbotapi.InlineKeyboardMarkup {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("✅ Создать пост в Instagram", "create_post_instagram"),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("---------------", "no_action"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
@@ -261,6 +255,6 @@ func (b *Bot) CreateSubscriptionLink(userID int64, tariff string, amount float64
 	if b.SubscriptionService == nil {
 		return "", fmt.Errorf("subscription service not initialized")
 	}
-	
+
 	return b.SubscriptionService.CreateSubscriptionLink(userID, tariff, amount)
 }

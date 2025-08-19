@@ -170,17 +170,22 @@ func (db *DB) GetOrCreateUser(userID int64, username, firstName, lastName string
 	return user, err
 }
 
-// GetUserUsageToday получает количество использований пользователя сегодня
-func (db *DB) GetUserUsageToday(userID int64) (int, error) {
+// GetUserUsageTotal получает общее количество использований пользователя
+func (db *DB) GetUserUsageTotal(userID int64) (int, error) {
 	var count int
 	err := db.QueryRow(`
-		SELECT usage_count FROM usage_stats 
-		WHERE user_id = $1 AND date = CURRENT_DATE`, userID).Scan(&count)
+		SELECT COALESCE(SUM(usage_count), 0) FROM usage_stats 
+		WHERE user_id = $1`, userID).Scan(&count)
 
-	if err == sql.ErrNoRows {
+	if err != nil {
 		return 0, nil
 	}
 	return count, err
+}
+
+// GetUserUsageToday получает количество использований пользователя сегодня
+func (db *DB) GetUserUsageToday(userID int64) (int, error) {
+	return db.GetUserUsageTotal(userID)
 }
 
 // IncrementUsage увеличивает счетчик использований

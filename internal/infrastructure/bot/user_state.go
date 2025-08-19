@@ -119,6 +119,7 @@ func (sm *StateManager) UpdateStep(userID int64, step string) {
 }
 
 // IncrementUsage увеличивает счетчик использований
+// Вызывается только когда пользователь принял готовый пост от LLM
 func (sm *StateManager) IncrementUsage(userID int64) error {
 	state := sm.GetState(userID)
 	state.UsageCount++

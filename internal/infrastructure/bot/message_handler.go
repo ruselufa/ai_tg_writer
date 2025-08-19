@@ -86,9 +86,24 @@ func (mh *MessageHandler) HandleMessage(bot *Bot, message *tgbotapi.Message) boo
 // handleVoiceMessage обрабатывает голосовое сообщение
 func (mh *MessageHandler) handleVoiceMessage(bot *Bot, message *tgbotapi.Message) {
 	userID := message.From.ID
-
 	// Получаем состояние пользователя
 	state := mh.stateManager.GetState(userID)
+
+	// Проверяем лимит использования
+	canUse, err := mh.stateManager.CheckLimit(userID)
+	if err != nil {
+		log.Printf("Ошибка проверки лимита: %v", err)
+		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при проверке лимита. Попробуйте позже.")
+		bot.Send(msg)
+		return
+	}
+	if !canUse {
+		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Вы превысили лимит бесплатного использования. Для увеличения лимита перейдите на премиум тариф")
+		bot.Send(msg)
+		mh.showSubscriptionPurchaseScreen(bot, message.Chat.ID, userID)
+		return
+	}
+
 	log.Printf("[DEBUG] handleVoiceMessage вызван, WaitingForVoice=%v, ApprovalStatus=%s", state.WaitingForVoice, state.ApprovalStatus)
 
 	// Скачиваем файл
@@ -99,12 +114,6 @@ func (mh *MessageHandler) handleVoiceMessage(bot *Bot, message *tgbotapi.Message
 		msg.ReplyToMessageID = message.MessageID
 		bot.Send(msg)
 		return
-	}
-
-	// Увеличиваем счетчик использований
-	err = mh.stateManager.IncrementUsage(userID)
-	if err != nil {
-		log.Printf("Ошибка увеличения счетчика: %v", err)
 	}
 
 	// Определяем, в каком режиме мы находимся

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -376,9 +377,9 @@ func (ih *InlineHandler) handleMainMenu(bot *Bot, callback *tgbotapi.CallbackQue
 
 	// Получаем информацию о подписке
 	sub, _ := bot.SubscriptionService.GetUserSubscription(userID)
-	// Получаем usage сегодня
-	used, _ := bot.DB.GetUserUsageToday(userID)
-	const freeLimit = 5
+	// Получаем общее использование (лимит 5 запросов навсегда)
+	used, _ := bot.DB.GetUserUsageTotal(userID)
+	const freeLimit = 5 // Общий лимит запросов навсегда
 
 	var subLabel string
 	if sub != nil && sub.Active {
@@ -406,8 +407,6 @@ func (ih *InlineHandler) handleMainMenu(bot *Bot, callback *tgbotapi.CallbackQue
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post")),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("---------------", "no_action")),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 			tgbotapi.NewInlineKeyboardButtonData(subLabel, "subscription")),
@@ -470,6 +469,12 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 		return
 	}
 
+	// Увеличиваем счетчик использований ТОЛЬКО когда пользователь соглашается с результатом
+	err := ih.stateManager.IncrementUsage(userID)
+	if err != nil {
+		log.Printf("Ошибка увеличения счетчика: %v", err)
+	}
+
 	// Сохраняем пост в БД (заглушка)
 	ih.stateManager.SavePost(userID, *state.CurrentPost)
 	log.Printf("Пост сохранен в БД (заглушка): %s", state.CurrentPost.ContentType)
@@ -497,6 +502,12 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 // handleApprove обрабатывает согласие с результатом
 func (ih *InlineHandler) handleApprove(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
+
+	// Увеличиваем счетчик использований ТОЛЬКО когда пользователь соглашается с результатом
+	err := ih.stateManager.IncrementUsage(userID)
+	if err != nil {
+		log.Printf("Ошибка увеличения счетчика: %v", err)
+	}
 
 	// Сохраняем пост в БД (заглушка)
 	state := ih.stateManager.GetState(userID)
@@ -883,21 +894,32 @@ func (ih *InlineHandler) handleSubscription(bot *Bot, callback *tgbotapi.Callbac
 			),
 		)
 	} else {
-		nextPay := sub.NextPayment.Format("02.01.2006")
+		var subStatus string
+		if sub.Status == string(domain.SubscriptionStatusCancelled) {
+			subStatus = "Подписка активна до"
+		} else {
+			subStatus = "Следующий платеж"
+		}
+		// надо поставить московское время
+		nextPay := sub.NextPayment.In(time.FixedZone("UTC+3", 3*60*60)).Format("02.01.2006 15:04 МСК")
 		text = fmt.Sprintf(`💎 Подписка
 
 📊 Текущий тариф: *Premium*
-📅 Следующий платеж: %s
-✅ Статус: активна`, nextPay)
+📅 %s: %s
+✅ Статус: активна`, subStatus, nextPay)
 
-		keyboard = tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
+		var rows [][]tgbotapi.InlineKeyboardButton
+		if sub.Status == string(domain.SubscriptionStatusActive) && sub.YKPaymentMethodID != nil && sub.YKLastPaymentID != nil {
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
-			),
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
-			),
-		)
+			))
+		}
+
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
+		))
+
+		keyboard = tgbotapi.NewInlineKeyboardMarkup(rows...)
 	}
 
 	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, text)
