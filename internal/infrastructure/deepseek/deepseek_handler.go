@@ -48,6 +48,19 @@ func NewDeepSeekHandler() *DeepSeekHandler {
 			apiURL: "https://api.deepseek.com/v1/chat/completions",
 			client: &http.Client{
 				Timeout: 60 * time.Second,
+				// ОПТИМИЗАЦИЯ: Пул соединений для лучшей производительности
+				Transport: &http.Transport{
+					MaxIdleConns:        50,               // Максимум неактивных соединений
+					MaxIdleConnsPerHost: 10,               // Максимум на хост
+					IdleConnTimeout:     90 * time.Second, // Время жизни соединения
+					DisableCompression:  false,            // Включаем сжатие для экономии трафика
+					ForceAttemptHTTP2:   true,             // Принудительно используем HTTP/2
+					// Дополнительные настройки для стабильности
+					MaxConnsPerHost:       100,              // Максимум соединений на хост
+					ResponseHeaderTimeout: 30 * time.Second, // Таймаут заголовков ответа
+					// Настройки для TLS
+					TLSHandshakeTimeout: 10 * time.Second, // Таймаут TLS handshake
+				},
 			},
 		}
 	}
@@ -57,6 +70,19 @@ func NewDeepSeekHandler() *DeepSeekHandler {
 		apiURL: "https://api.deepseek.com/v1/chat/completions",
 		client: &http.Client{
 			Timeout: 60 * time.Second,
+			// ОПТИМИЗАЦИЯ: Пул соединений для лучшей производительности
+			Transport: &http.Transport{
+				MaxIdleConns:        50,               // Максимум неактивных соединений
+				MaxIdleConnsPerHost: 10,               // Максимум на хост
+				IdleConnTimeout:     90 * time.Second, // Время жизни соединения
+				DisableCompression:  false,            // Включаем сжатие для экономии трафика
+				ForceAttemptHTTP2:   true,             // Принудительно используем HTTP/2
+				// Дополнительные настройки для стабильности
+				MaxConnsPerHost:       100,              // Максимум соединений на хост
+				ResponseHeaderTimeout: 30 * time.Second, // Таймаут заголовков ответа
+				// Настройки для TLS
+				TLSHandshakeTimeout: 10 * time.Second, // Таймаут TLS handshake
+			},
 		},
 	}
 }

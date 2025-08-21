@@ -55,6 +55,17 @@ func NewWhisperHandler() *WhisperHandler {
 		apiURL: apiURL,
 		client: &http.Client{
 			Timeout: 300 * time.Second,
+			// ОПТИМИЗАЦИЯ: Пул соединений для лучшей производительности
+			Transport: &http.Transport{
+				MaxIdleConns:        20,               // Максимум неактивных соединений (меньше для локального API)
+				MaxIdleConnsPerHost: 5,                // Максимум на хост (меньше для локального API)
+				IdleConnTimeout:     60 * time.Second, // Время жизни соединения (меньше для локального API)
+				DisableCompression:  false,            // Включаем сжатие для аудио файлов
+				ForceAttemptHTTP2:   false,            // Локальный API может не поддерживать HTTP/2
+				// Дополнительные настройки для стабильности
+				MaxConnsPerHost:       50,               // Максимум соединений на хост
+				ResponseHeaderTimeout: 10 * time.Second, // Быстрый таймаут заголовков для локального API
+			},
 		},
 	}
 }
