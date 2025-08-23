@@ -99,7 +99,7 @@ func (b *Bot) CreateMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("💎 Моя подписка", "subscription"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
+			// tgbotapi.NewInlineKeyboardButtonData("🎨 Настройки стилизации", "styling_settings"),
 			tgbotapi.NewInlineKeyboardButtonData("❓ Помощь", "help"),
 		),
 		// tgbotapi.NewInlineKeyboardRow(

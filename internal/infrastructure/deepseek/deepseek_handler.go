@@ -99,7 +99,6 @@ func (dh *DeepSeekHandler) RewriteText(originalText string) (string, error) {
 - Для списков используй эмодзи (например, 🔹, ✔️, ▫️).
 - Между абзацами и пунктами делай пустую строку.
 - Экранируй все спецсимволы MarkdownV2: _ * [ ] ( ) ~ > # + - = | { } . !
-- В конце добавь 3-5 релевантных хештегов.
 
 Исходный текст:
 \"%s\"
@@ -115,7 +114,7 @@ func (dh *DeepSeekHandler) RewriteText(originalText string) (string, error) {
 			},
 		},
 		Temperature: 0.7,
-		MaxTokens:   1000,
+		MaxTokens:   2000,
 	}
 
 	response, err := dh.makeRequest(request)
@@ -164,7 +163,7 @@ func (dh *DeepSeekHandler) ImproveText(text string, style string) (string, error
 			},
 		},
 		Temperature: 0.7,
-		MaxTokens:   1000,
+		MaxTokens:   2000,
 	}
 
 	response, err := dh.makeRequest(request)
@@ -201,7 +200,7 @@ func (dh *DeepSeekHandler) SummarizeText(text string) (string, error) {
 			},
 		},
 		Temperature: 0.5,
-		MaxTokens:   500,
+		MaxTokens:   2000,
 	}
 
 	response, err := dh.makeRequest(request)
@@ -225,6 +224,8 @@ func (dh *DeepSeekHandler) CreateTelegramPost(originalText string) (string, erro
 
 	prompt := fmt.Sprintf(`Создай привлекательный пост для Telegram канала на основе этого текста. 
 
+ВАЖНО: Отвечай ТОЛЬКО готовым постом, без вступлений типа "Конечно!", "Вот готовый пост" или заключений типа "Удачных покупок!". Клиент должен скопировать ответ и сразу опубликовать.	
+
 Требования к форматированию:
 - Используй *жирный* для заголовков и важных мыслей.
 - Используй _курсив_ для акцентов.
@@ -247,7 +248,7 @@ func (dh *DeepSeekHandler) CreateTelegramPost(originalText string) (string, erro
 			},
 		},
 		Temperature: 0.8,
-		MaxTokens:   1500,
+		MaxTokens:   2000,
 	}
 
 	response, err := dh.makeRequest(request)
