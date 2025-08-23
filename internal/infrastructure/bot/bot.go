@@ -140,7 +140,7 @@ func (b *Bot) CreatePostActionKeyboard() tgbotapi.InlineKeyboardMarkup {
 }
 
 // SendFormattedMessage отправляет сообщение с форматированием
-func (b *Bot) SendFormattedMessage(chatID int64, text string, entities []MessageEntity) error {
+func (b *Bot) SendFormattedMessage(chatID int64, text string, entities []MessageEntity) (int, error) {
 	msg := tgbotapi.NewMessage(chatID, text)
 
 	// Конвертируем наши entities в формат tgbotapi
@@ -176,12 +176,15 @@ func (b *Bot) SendFormattedMessage(chatID int64, text string, entities []Message
 
 	msg.Entities = tgbotEntities
 
-	_, err := b.Send(msg)
-	return err
+	message, err := b.Send(msg)
+	if err != nil {
+		return 0, err
+	}
+	return message.MessageID, nil
 }
 
 // SendFormattedMessageWithKeyboard отправляет форматированное сообщение с клавиатурой
-func (b *Bot) SendFormattedMessageWithKeyboard(chatID int64, text string, entities []MessageEntity, keyboard tgbotapi.InlineKeyboardMarkup) error {
+func (b *Bot) SendFormattedMessageWithKeyboard(chatID int64, text string, entities []MessageEntity, keyboard tgbotapi.InlineKeyboardMarkup) (int, error) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ReplyMarkup = keyboard
 
@@ -218,8 +221,11 @@ func (b *Bot) SendFormattedMessageWithKeyboard(chatID int64, text string, entiti
 
 	msg.Entities = tgbotEntities
 
-	_, err := b.Send(msg)
-	return err
+	message, err := b.Send(msg)
+	if err != nil {
+		return 0, err
+	}
+	return message.MessageID, nil
 }
 
 // CreateStylingSettingsKeyboard создает клавиатуру для настроек стилизации

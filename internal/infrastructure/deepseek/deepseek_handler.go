@@ -47,7 +47,7 @@ func NewDeepSeekHandler() *DeepSeekHandler {
 			apiKey: "",
 			apiURL: "https://api.deepseek.com/v1/chat/completions",
 			client: &http.Client{
-				Timeout: 60 * time.Second,
+				Timeout: 300 * time.Second, // Увеличиваем до 5 минут для генерации постов
 				// ОПТИМИЗАЦИЯ: Пул соединений для лучшей производительности
 				Transport: &http.Transport{
 					MaxIdleConns:        50,               // Максимум неактивных соединений
@@ -56,8 +56,8 @@ func NewDeepSeekHandler() *DeepSeekHandler {
 					DisableCompression:  false,            // Включаем сжатие для экономии трафика
 					ForceAttemptHTTP2:   true,             // Принудительно используем HTTP/2
 					// Дополнительные настройки для стабильности
-					MaxConnsPerHost:       100,              // Максимум соединений на хост
-					ResponseHeaderTimeout: 30 * time.Second, // Таймаут заголовков ответа
+					MaxConnsPerHost:       100,               // Максимум соединений на хост
+					ResponseHeaderTimeout: 120 * time.Second, // Увеличиваем таймаут заголовков ответа
 					// Настройки для TLS
 					TLSHandshakeTimeout: 10 * time.Second, // Таймаут TLS handshake
 				},
@@ -69,7 +69,7 @@ func NewDeepSeekHandler() *DeepSeekHandler {
 		apiKey: apiKey,
 		apiURL: "https://api.deepseek.com/v1/chat/completions",
 		client: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 300 * time.Second, // Увеличиваем до 5 минут для генерации постов
 			// ОПТИМИЗАЦИЯ: Пул соединений для лучшей производительности
 			Transport: &http.Transport{
 				MaxIdleConns:        50,               // Максимум неактивных соединений
@@ -78,8 +78,8 @@ func NewDeepSeekHandler() *DeepSeekHandler {
 				DisableCompression:  false,            // Включаем сжатие для экономии трафика
 				ForceAttemptHTTP2:   true,             // Принудительно используем HTTP/2
 				// Дополнительные настройки для стабильности
-				MaxConnsPerHost:       100,              // Максимум соединений на хост
-				ResponseHeaderTimeout: 30 * time.Second, // Таймаут заголовков ответа
+				MaxConnsPerHost:       100,               // Максимум соединений на хост
+				ResponseHeaderTimeout: 120 * time.Second, // Увеличиваем таймаут заголовков ответа
 				// Настройки для TLS
 				TLSHandshakeTimeout: 10 * time.Second, // Таймаут TLS handshake
 			},
@@ -263,8 +263,38 @@ func (dh *DeepSeekHandler) CreateTelegramPost(originalText string) (string, erro
 	return post, nil
 }
 
-// makeRequest выполняет HTTP запрос к DeepSeek API
+// makeRequest выполняет HTTP запрос к DeepSeek API с retry логикой
 func (dh *DeepSeekHandler) makeRequest(request DeepSeekRequest) (*DeepSeekResponse, error) {
+	const maxRetries = 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		log.Printf("🔄 [DeepSeek] Попытка %d/%d", attempt, maxRetries)
+
+		response, err := dh.makeSingleRequest(request)
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("✅ [DeepSeek] Успешно после %d попыток", attempt)
+			}
+			return response, nil
+		}
+
+		lastErr = err
+		log.Printf("❌ [DeepSeek] Попытка %d неудачна: %v", attempt, err)
+
+		// Если это не последняя попытка, ждем перед повтором
+		if attempt < maxRetries {
+			waitTime := time.Duration(attempt) * 2 * time.Second
+			log.Printf("⏳ [DeepSeek] Ждем %v перед повтором...", waitTime)
+			time.Sleep(waitTime)
+		}
+	}
+
+	return nil, fmt.Errorf("все попытки исчерпаны, последняя ошибка: %v", lastErr)
+}
+
+// makeSingleRequest выполняет один HTTP запрос к DeepSeek API
+func (dh *DeepSeekHandler) makeSingleRequest(request DeepSeekRequest) (*DeepSeekResponse, error) {
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка маршалинга запроса: %v", err)

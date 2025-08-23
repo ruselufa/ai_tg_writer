@@ -13,6 +13,7 @@ type Post struct {
 	Messages    []string        // голосовые сообщения, использованные для создания поста
 	Entities    []MessageEntity // Telegram entities для форматирования
 	Styling     PostStyling     // настройки стилизации, использованные при создании
+	MessageID   int             // ID сообщения в Telegram с готовым постом
 }
 
 // UserState хранит состояние пользователя
@@ -361,4 +362,30 @@ func (sm *StateManager) UpdatePostStyling(userID int64, updates map[string]bool)
 	if updates["use_pre"] {
 		state.PostStyling.UsePre = updates["use_pre"]
 	}
+}
+
+// SetPostMessageID сохраняет ID сообщения с готовым постом
+func (sm *StateManager) SetPostMessageID(userID int64, messageID int) {
+	state := sm.GetState(userID)
+	if state.CurrentPost != nil {
+		state.CurrentPost.MessageID = messageID
+	}
+}
+
+// GetPostMessageID возвращает ID сообщения с готовым постом
+func (sm *StateManager) GetPostMessageID(userID int64) int {
+	state := sm.GetState(userID)
+	if state.CurrentPost != nil {
+		return state.CurrentPost.MessageID
+	}
+	return 0
+}
+
+// RestorePostMessage восстанавливает сообщение с постом в чате
+func (sm *StateManager) RestorePostMessage(userID int64) *Post {
+	state := sm.GetState(userID)
+	if state.CurrentPost != nil && state.CurrentPost.MessageID > 0 {
+		return state.CurrentPost
+	}
+	return nil
 }

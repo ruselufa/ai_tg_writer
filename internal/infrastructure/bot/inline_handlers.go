@@ -299,7 +299,7 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 
 	// Отправляем результат с кнопками согласования
 	keyboard := bot.CreateApprovalKeyboard()
-	err = bot.SendFormattedMessageWithKeyboard(
+	messageID, err := bot.SendFormattedMessageWithKeyboard(
 		callback.Message.Chat.ID,
 		cleanText,
 		entities,
@@ -311,6 +311,10 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 		resultMsg := tgbotapi.NewMessage(callback.Message.Chat.ID, cleanText)
 		resultMsg.ReplyMarkup = keyboard
 		bot.Send(resultMsg)
+	} else {
+		// Сохраняем ID сообщения с готовым постом
+		ih.stateManager.SetPostMessageID(userID, messageID)
+		log.Printf("Сохранили ID сообщения с постом: %d", messageID)
 	}
 }
 
@@ -354,6 +358,7 @@ func (ih *InlineHandler) handleEditPost(bot *Bot, callback *tgbotapi.CallbackQue
 	ih.stateManager.SetWaitingForVoice(userID, true)
 	ih.stateManager.SetApprovalStatus(userID, "editing")
 
+	// Отправляем сообщение с инструкциями по редактированию
 	msg := tgbotapi.NewEditMessageText(
 		callback.Message.Chat.ID,
 		callback.Message.MessageID,
@@ -479,6 +484,10 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 	ih.stateManager.SavePost(userID, *state.CurrentPost)
 	log.Printf("Пост сохранен в БД (заглушка): %s", state.CurrentPost.ContentType)
 
+	// Сохраняем данные поста перед очисткой состояния
+	postContent := state.CurrentPost.Content
+	postEntities := state.CurrentPost.Entities
+
 	// Очищаем состояние
 	ih.stateManager.UpdateStep(userID, "idle")
 	ih.stateManager.SetCurrentPost(userID, nil)
@@ -488,15 +497,28 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 	ih.stateManager.ClearPendingEdits(userID)
 	ih.stateManager.SetApprovalStatus(userID, "approved")
 
-	// Отправляем сообщение об успехе
-	msg := tgbotapi.NewEditMessageText(
+	// СНАЧАЛА удаляем старое сообщение с кнопками
+	deleteMsg := tgbotapi.NewDeleteMessage(callback.Message.Chat.ID, callback.Message.MessageID)
+	bot.Send(deleteMsg)
+
+	// ЗАТЕМ отправляем готовый пост БЕЗ кнопок управления
+	_, err = bot.SendFormattedMessage(
 		callback.Message.Chat.ID,
-		callback.Message.MessageID,
+		postContent,
+		postEntities,
+	)
+	if err != nil {
+		log.Printf("Ошибка отправки готового поста: %v", err)
+	}
+
+	// И НАКОНЕЦ отправляем НОВОЕ сообщение с главным меню
+	keyboard := bot.CreateMainKeyboard()
+	newMsg := tgbotapi.NewMessage(
+		callback.Message.Chat.ID,
 		"✅ Пост успешно сохранен! Текст остался в чате.\n\nПривет! Я помогу тебе создать мощный контент из твоих идей. Выбери, что хочешь создать:",
 	)
-	keyboard := bot.CreateMainKeyboard()
-	msg.ReplyMarkup = &keyboard
-	bot.Send(msg)
+	newMsg.ReplyMarkup = keyboard
+	bot.Send(newMsg)
 }
 
 // handleApprove обрабатывает согласие с результатом
@@ -511,9 +533,16 @@ func (ih *InlineHandler) handleApprove(bot *Bot, callback *tgbotapi.CallbackQuer
 
 	// Сохраняем пост в БД (заглушка)
 	state := ih.stateManager.GetState(userID)
+	var postContent string
+	var postEntities []MessageEntity
+
 	if state.CurrentPost != nil {
 		ih.stateManager.SavePost(userID, *state.CurrentPost)
 		log.Printf("Пост сохранен в БД (заглушка): %s", state.CurrentPost.ContentType)
+
+		// Сохраняем данные поста перед очисткой состояния
+		postContent = state.CurrentPost.Content
+		postEntities = state.CurrentPost.Entities
 	}
 
 	// Очищаем состояние
@@ -523,17 +552,32 @@ func (ih *InlineHandler) handleApprove(bot *Bot, callback *tgbotapi.CallbackQuer
 	ih.stateManager.ClearPendingVoices(userID)
 	ih.stateManager.SetApprovalStatus(userID, "approved")
 
-	// Отправляем главное меню
+	// СНАЧАЛА удаляем старое сообщение с кнопками
+	deleteMsg := tgbotapi.NewDeleteMessage(callback.Message.Chat.ID, callback.Message.MessageID)
+	bot.Send(deleteMsg)
+
+	// ЗАТЕМ отправляем готовый пост БЕЗ кнопок управления
+	if postContent != "" {
+		_, err := bot.SendFormattedMessage(
+			callback.Message.Chat.ID,
+			postContent,
+			postEntities,
+		)
+		if err != nil {
+			log.Printf("Ошибка отправки готового поста: %v", err)
+		}
+	}
+
+	// И НАКОНЕЦ отправляем НОВОЕ сообщение с главным меню
 	text := "✅ Пост сохранен! Текст остался в чате.\n\nПривет! Я помогу тебе создать мощный контент из твоих идей. Выбери, что хочешь создать:"
 	keyboard := bot.CreateMainKeyboard()
 
-	msg := tgbotapi.NewEditMessageText(
+	newMsg := tgbotapi.NewMessage(
 		callback.Message.Chat.ID,
-		callback.Message.MessageID,
 		text,
 	)
-	msg.ReplyMarkup = &keyboard
-	bot.Send(msg)
+	newMsg.ReplyMarkup = keyboard
+	bot.Send(newMsg)
 }
 
 // handleEditStartCreation обрабатывает начало создания правок
@@ -659,7 +703,7 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 
 	// Отправляем обновленный результат с кнопками согласования
 	keyboard := bot.CreateEditApprovalKeyboard()
-	err = bot.SendFormattedMessageWithKeyboard(
+	messageID, err := bot.SendFormattedMessageWithKeyboard(
 		callback.Message.Chat.ID,
 		cleanText,
 		entities,
@@ -671,6 +715,10 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 		resultMsg := tgbotapi.NewMessage(callback.Message.Chat.ID, cleanText)
 		resultMsg.ReplyMarkup = keyboard
 		bot.Send(resultMsg)
+	} else {
+		// Сохраняем ID сообщения с обновленным постом
+		ih.stateManager.SetPostMessageID(userID, messageID)
+		log.Printf("Сохранили ID сообщения с обновленным постом: %d", messageID)
 	}
 }
 
@@ -997,7 +1045,7 @@ _Курсив_ - для акцентов и выделения
 	cleanText, entities := formatter.ParseMarkdownToEntities(testText)
 
 	// Отправляем с форматированием
-	err := bot.SendFormattedMessage(callback.Message.Chat.ID, cleanText, entities)
+	_, err := bot.SendFormattedMessage(callback.Message.Chat.ID, cleanText, entities)
 	if err != nil {
 		log.Printf("Ошибка отправки тестового сообщения: %v", err)
 		// Отправляем без форматирования в случае ошибки
