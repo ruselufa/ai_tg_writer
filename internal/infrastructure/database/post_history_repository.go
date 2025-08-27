@@ -259,3 +259,14 @@ func (r *PostHistoryRepository) AddVoiceToHistory(id int, voiceText string, voic
 	_, err = r.db.Exec(query, newVoiceText, newVoiceDuration, newVoiceFileSize, id)
 	return err
 }
+
+// UpdateVoiceHistoryComplete обновляет запись истории с полной информацией о всех голосовых сообщениях
+func (r *PostHistoryRepository) UpdateVoiceHistoryComplete(id int, combinedVoiceText string, totalDuration int, totalFileSize int) error {
+	query := `
+		UPDATE post_history SET
+			voice_text = $1, voice_duration = $2, voice_file_size = $3
+		WHERE id = $4`
+
+	_, err := r.db.Exec(query, combinedVoiceText, totalDuration, totalFileSize, id)
+	return err
+}

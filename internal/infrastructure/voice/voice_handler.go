@@ -162,30 +162,36 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 }
 
 // TranscribeVoiceFile транскрибирует уже скачанный файл с логированием
-func (vh *VoiceHandler) TranscribeVoiceFile(filePath string, userID int64, fileID string, duration int, fileSize int) (string, int, error) {
+func (vh *VoiceHandler) TranscribeVoiceFile(filePath string, userID int64, fileID string, duration int, fileSize int, isFirstMessage bool, existingHistoryID int) (string, int, error) {
 	voiceSentAt := time.Now().UTC()
 
-	// Создаем запись в истории
-	history := &database.PostHistory{
-		UserID:        userID,
-		VoiceText:     "", // Пока пустой, заполним после транскрипции
-		VoiceFileID:   fileID,
-		VoiceDuration: duration, // Используем переданную длительность
-		VoiceFileSize: fileSize, // Используем переданный размер файла
-		VoiceSentAt:   voiceSentAt,
-		AIModel:       "deepseek",
-	}
-
-	// Сохраняем начальную запись
 	var historyID int
-	if vh.postHistoryRepo != nil {
-		err := vh.postHistoryRepo.CreatePostHistory(history)
-		if err != nil {
-			log.Printf("Ошибка создания записи в истории: %v", err)
-			// Продолжаем работу, не прерываем из-за ошибки логирования
-		} else {
-			historyID = history.ID
+
+	if isFirstMessage {
+		// Создаем новую запись в истории только для первого сообщения
+		history := &database.PostHistory{
+			UserID:        userID,
+			VoiceText:     "", // Пока пустой, заполним после транскрипции
+			VoiceFileID:   fileID,
+			VoiceDuration: duration, // Используем переданную длительность
+			VoiceFileSize: fileSize, // Используем переданный размер файла
+			VoiceSentAt:   voiceSentAt,
+			AIModel:       "deepseek",
 		}
+
+		// Сохраняем начальную запись
+		if vh.postHistoryRepo != nil {
+			err := vh.postHistoryRepo.CreatePostHistory(history)
+			if err != nil {
+				log.Printf("Ошибка создания записи в истории: %v", err)
+				// Продолжаем работу, не прерываем из-за ошибки логирования
+			} else {
+				historyID = history.ID
+			}
+		}
+	} else {
+		// Для последующих сообщений используем существующий ID
+		historyID = existingHistoryID
 	}
 
 	// Отправляем на транскрипцию
@@ -306,6 +312,20 @@ func (vh *VoiceHandler) AddVoiceToHistory(historyID int, voiceText string, voice
 			return err
 		}
 		log.Printf("Голосовое сообщение добавлено к истории ID: %d", historyID)
+		return nil
+	}
+	return fmt.Errorf("postHistoryRepo не инициализирован")
+}
+
+// UpdateVoiceHistoryComplete обновляет запись истории с полной информацией о всех голосовых сообщениях
+func (vh *VoiceHandler) UpdateVoiceHistoryComplete(historyID int, combinedVoiceText string, totalDuration int, totalFileSize int) error {
+	if vh.postHistoryRepo != nil {
+		err := vh.postHistoryRepo.UpdateVoiceHistoryComplete(historyID, combinedVoiceText, totalDuration, totalFileSize)
+		if err != nil {
+			log.Printf("Ошибка обновления полной истории голосовых сообщений: %v", err)
+			return err
+		}
+		log.Printf("Полная история голосовых сообщений обновлена для ID: %d", historyID)
 		return nil
 	}
 	return fmt.Errorf("postHistoryRepo не инициализирован")

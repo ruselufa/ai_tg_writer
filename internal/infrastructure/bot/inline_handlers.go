@@ -215,13 +215,18 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	results := make([]string, 0)
 	var firstHistoryID int
 
-	// Обрабатываем каждое голосовое сообщение последовательно для правильной группировки
+		// Обрабатываем каждое голосовое сообщение последовательно для правильной группировки
 	voiceCount := 0
+	var allVoiceTexts []string
+	var totalDuration int
+	var totalFileSize int
+	
 	for fileID, voice := range state.PendingVoices {
 		voiceCount++
-
+		
 		// Транскрибируем файл
-		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize)
+		isFirstMessage := voiceCount == 1
+		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize, isFirstMessage, firstHistoryID)
 		if err != nil {
 			log.Printf("Ошибка обработки голосового сообщения: %v", err)
 			ih.stateManager.UpdateVoiceTranscription(userID, fileID, "", err)
@@ -230,25 +235,29 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 
 		// Сохраняем результат
 		results = append(results, text)
+		allVoiceTexts = append(allVoiceTexts, text)
+		totalDuration += voice.Duration
+		totalFileSize += voice.FileSize
 		ih.stateManager.UpdateVoiceTranscription(userID, fileID, text, nil)
 
 		// Первое сообщение создает запись в истории
 		if voiceCount == 1 {
 			firstHistoryID = historyID
 			log.Printf("Установлен первый historyID для поста: %d", firstHistoryID)
-		} else {
-			// Последующие сообщения добавляются к существующей записи
-			if firstHistoryID > 0 {
-				err = ih.voiceHandler.AddVoiceToHistory(firstHistoryID, text, voice.Duration, voice.FileSize)
-				if err != nil {
-					log.Printf("Ошибка добавления голосового сообщения к истории: %v", err)
-				}
-			}
 		}
-
+		
 		// Удаляем временный файл
 		if err := os.Remove(voice.FilePath); err != nil {
 			log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
+		}
+	}
+	
+	// Обновляем запись истории с полной информацией
+	if firstHistoryID > 0 && len(allVoiceTexts) > 0 {
+		combinedText := strings.Join(allVoiceTexts, "\n\n")
+		err := ih.voiceHandler.UpdateVoiceHistoryComplete(firstHistoryID, combinedText, totalDuration, totalFileSize)
+		if err != nil {
+			log.Printf("Ошибка обновления полной истории голосовых сообщений: %v", err)
 		}
 	}
 
@@ -649,9 +658,13 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 	var firstHistoryID int
 
 	// Обрабатываем каждое голосовое сообщение с правками последовательно
+	editCount := 0
 	for fileID, voice := range state.PendingEdits {
+		editCount++
+
 		// Транскрибируем файл
-		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize)
+		isFirstMessage := editCount == 1
+		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize, isFirstMessage, firstHistoryID)
 		if err != nil {
 			log.Printf("Ошибка обработки голосового сообщения с правками: %v", err)
 			continue
