@@ -270,3 +270,14 @@ func (r *PostHistoryRepository) UpdateVoiceHistoryComplete(id int, combinedVoice
 	_, err := r.db.Exec(query, combinedVoiceText, totalDuration, totalFileSize, id)
 	return err
 }
+
+// UpdateVoiceFileInfo обновляет информацию о голосовом файле (длительность и размер)
+func (r *PostHistoryRepository) UpdateVoiceFileInfo(id int, voiceDuration int, voiceFileSize int) error {
+	query := `
+		UPDATE post_history SET
+			voice_duration = $1, voice_file_size = $2
+		WHERE id = $3`
+
+	_, err := r.db.Exec(query, voiceDuration, voiceFileSize, id)
+	return err
+}

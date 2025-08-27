@@ -115,10 +115,10 @@ func main() {
 
 	// Создаем репозиторий для истории постов
 	postHistoryRepo := database.NewPostHistoryRepository(db.DB)
-	
+
 	voiceHandler := voice.NewVoiceHandler(botAPI, postHistoryRepo)
 	stateManager := bot.NewStateManager(db)
-	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
+	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler, subscriptionService)
 	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler, inlineHandler)
 	fmt.Println("Обработчики созданы")
 	// Настраиваем обновления

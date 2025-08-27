@@ -291,12 +291,14 @@ func (sm *StateManager) ClearEditMessages(userID int64) {
 }
 
 // AddPendingEdit добавляет голосовое сообщение для правок в очередь на транскрипцию
-func (sm *StateManager) AddPendingEdit(userID int64, messageID int, fileID string) {
+func (sm *StateManager) AddPendingEdit(userID int64, messageID int, fileID string, duration int, fileSize int) {
 	state := sm.GetState(userID)
 	state.PendingEdits[fileID] = &VoiceTranscription{
-		MessageID: messageID,
-		FileID:    fileID,
-		Status:    "pending",
+		MessageID:   messageID,
+		FileID:      fileID,
+		Status:      "pending",
+		Duration:    duration,
+		FileSize:    fileSize,
 	}
 }
 

@@ -169,6 +169,7 @@ func (vh *VoiceHandler) TranscribeVoiceFile(filePath string, userID int64, fileI
 
 	if isFirstMessage {
 		// Создаем новую запись в истории только для первого сообщения
+		log.Printf("Создаем новую запись для первого сообщения: duration=%d, fileSize=%d", duration, fileSize)
 		history := &database.PostHistory{
 			UserID:        userID,
 			VoiceText:     "", // Пока пустой, заполним после транскрипции
@@ -192,6 +193,14 @@ func (vh *VoiceHandler) TranscribeVoiceFile(filePath string, userID int64, fileI
 	} else {
 		// Для последующих сообщений используем существующий ID
 		historyID = existingHistoryID
+
+		// Обновляем информацию о голосовом файле в существующей записи
+		if historyID > 0 && vh.postHistoryRepo != nil {
+			err := vh.UpdateVoiceFileInfo(historyID, duration, fileSize)
+			if err != nil {
+				log.Printf("Ошибка обновления информации о голосовом файле: %v", err)
+			}
+		}
 	}
 
 	// Отправляем на транскрипцию
@@ -326,6 +335,20 @@ func (vh *VoiceHandler) UpdateVoiceHistoryComplete(historyID int, combinedVoiceT
 			return err
 		}
 		log.Printf("Полная история голосовых сообщений обновлена для ID: %d", historyID)
+		return nil
+	}
+	return fmt.Errorf("postHistoryRepo не инициализирован")
+}
+
+// UpdateVoiceFileInfo обновляет информацию о голосовом файле
+func (vh *VoiceHandler) UpdateVoiceFileInfo(historyID int, voiceDuration int, voiceFileSize int) error {
+	if vh.postHistoryRepo != nil {
+		err := vh.postHistoryRepo.UpdateVoiceFileInfo(historyID, voiceDuration, voiceFileSize)
+		if err != nil {
+			log.Printf("Ошибка обновления информации о голосовом файле: %v", err)
+			return err
+		}
+		log.Printf("Информация о голосовом файле обновлена для ID: %d", historyID)
 		return nil
 	}
 	return fmt.Errorf("postHistoryRepo не инициализирован")

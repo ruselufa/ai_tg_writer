@@ -3,6 +3,7 @@ package bot
 import (
 	"ai_tg_writer/internal/domain"
 	"ai_tg_writer/internal/infrastructure/voice"
+	"ai_tg_writer/internal/service"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,13 +16,14 @@ import (
 
 // InlineHandler обрабатывает inline-команды
 type InlineHandler struct {
-	stateManager *StateManager
-	voiceHandler *voice.VoiceHandler
-	prompts      map[string]Prompt
+	stateManager        *StateManager
+	voiceHandler        *voice.VoiceHandler
+	subscriptionService *service.SubscriptionService
+	prompts             map[string]Prompt
 }
 
 // NewInlineHandler создает новый обработчик inline-команд
-func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandler) *InlineHandler {
+func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandler, subscriptionService *service.SubscriptionService) *InlineHandler {
 	// Загружаем промпты
 	promptsFile, err := os.ReadFile("internal/infrastructure/prompts/prompts.json")
 	if err != nil {
@@ -36,9 +38,10 @@ func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandl
 	}
 
 	return &InlineHandler{
-		stateManager: stateManager,
-		voiceHandler: voiceHandler,
-		prompts:      prompts,
+		stateManager:        stateManager,
+		voiceHandler:        voiceHandler,
+		subscriptionService: subscriptionService,
+		prompts:             prompts,
 	}
 }
 
@@ -105,23 +108,66 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 func (ih *InlineHandler) handleCreatePost(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
 
-	// Обновляем состояние
-	ih.stateManager.UpdateStep(userID, "selecting_content_type")
-	ih.stateManager.SetContentType(userID, "telegram_post")
-	ih.stateManager.ClearVoiceMessages(userID)
-	ih.stateManager.SetCurrentPost(userID, nil)
+	// Проверяем подписку пользователя
+	subscriptionStatus, canCreate, remainingFree, err := ih.checkUserSubscriptionStatus(userID)
+	if err != nil {
+		log.Printf("Ошибка проверки подписки: %v", err)
+		// В случае ошибки разрешаем создание
+		subscriptionStatus = "error"
+		canCreate = true
+	}
 
-	// Создаем клавиатуру с типами контента
-	keyboard := bot.CreateContentTypeKeyboard()
+	if canCreate {
+		// Обновляем состояние
+		ih.stateManager.UpdateStep(userID, "selecting_content_type")
+		ih.stateManager.SetContentType(userID, "telegram_post")
+		ih.stateManager.ClearVoiceMessages(userID)
+		ih.stateManager.SetCurrentPost(userID, nil)
 
-	msg := tgbotapi.NewEditMessageText(
-		callback.Message.Chat.ID,
-		callback.Message.MessageID,
-		"✅ Выберите тип контента для создания:",
-	)
-	msg.ReplyMarkup = &keyboard
+		// Создаем клавиатуру с типами контента
+		keyboard := bot.CreateContentTypeKeyboard()
 
-	bot.Send(msg)
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"✅ Выберите тип контента для создания:",
+		)
+		msg.ReplyMarkup = &keyboard
+
+		bot.Send(msg)
+	} else {
+		// Показываем информацию о подписке и предлагаем оформить
+		keyboard := ih.createSubscriptionKeyboard(userID, subscriptionStatus, remainingFree)
+
+		var messageText string
+		switch subscriptionStatus {
+		case "cancelled":
+			messageText = "❌ Ваша подписка была отменена.\n\n"
+		case "expired":
+			messageText = "⏰ Срок действия подписки истек.\n\n"
+		case "no_subscription":
+			messageText = "💎 У вас нет активной подписки.\n\n"
+		default:
+			messageText = "💎 Требуется подписка для создания контента.\n\n"
+		}
+
+		if remainingFree > 0 {
+			messageText += fmt.Sprintf("🎁 У вас осталось %d бесплатных созданий в этом месяце.\n\n", remainingFree)
+		} else {
+			messageText += "🎁 Бесплатные создания на этот месяц закончились.\n\n"
+		}
+
+		messageText += "💳 Оформите подписку для неограниченного создания контента!"
+
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			messageText,
+		)
+		msg.ReplyMarkup = &keyboard
+
+		bot.Send(msg)
+	}
 }
 
 // handleCreateScript обрабатывает выбор типа скрипта
@@ -661,11 +707,16 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 
 	// Обрабатываем каждое голосовое сообщение с правками последовательно
 	editCount := 0
+	var allEditTexts []string
+	var totalEditDuration int
+	var totalEditFileSize int
+
 	for fileID, voice := range state.PendingEdits {
 		editCount++
 
 		// Транскрибируем файл
 		isFirstMessage := editCount == 1
+		log.Printf("Обрабатываем правку %d: duration=%d, fileSize=%d, isFirstMessage=%v", editCount, voice.Duration, voice.FileSize, isFirstMessage)
 		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize, isFirstMessage, firstHistoryID)
 		if err != nil {
 			log.Printf("Ошибка обработки голосового сообщения с правками: %v", err)
@@ -674,6 +725,9 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 
 		// Сохраняем результат
 		results = append(results, text)
+		allEditTexts = append(allEditTexts, text)
+		totalEditDuration += voice.Duration
+		totalEditFileSize += voice.FileSize
 
 		// Сохраняем первый historyID для поста
 		if firstHistoryID == 0 && historyID > 0 {
@@ -684,6 +738,15 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 		// Удаляем временный файл
 		if err := os.Remove(voice.FilePath); err != nil {
 			log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
+		}
+	}
+
+	// Обновляем запись истории с полной информацией о правках
+	if firstHistoryID > 0 && len(allEditTexts) > 0 {
+		combinedEditText := strings.Join(allEditTexts, "\n\n")
+		err := ih.voiceHandler.UpdateVoiceHistoryComplete(firstHistoryID, combinedEditText, totalEditDuration, totalEditFileSize)
+		if err != nil {
+			log.Printf("Ошибка обновления полной истории правок: %v", err)
 		}
 	}
 
@@ -1412,4 +1475,88 @@ func (ih *InlineHandler) handleUnknownCallback(bot *Bot, callback *tgbotapi.Call
 		"❌ Неизвестное действие",
 	)
 	bot.Send(msg)
+}
+
+// checkUserSubscriptionStatus проверяет статус подписки пользователя
+func (ih *InlineHandler) checkUserSubscriptionStatus(userID int64) (string, bool, int, error) {
+	// Получаем подписку пользователя
+	subscription, err := ih.subscriptionService.GetUserSubscription(userID)
+	if err != nil {
+		return "error", false, 0, err
+	}
+
+	// Если нет подписки
+	if subscription == nil {
+		// Проверяем бесплатные создания
+		remainingFree, err := ih.getRemainingFreeCreations(userID)
+		if err != nil {
+			return "no_subscription", false, 0, err
+		}
+		return "no_subscription", remainingFree > 0, remainingFree, nil
+	}
+
+	// Если подписка активна
+	if subscription.Status == "active" && subscription.Active {
+		return "active", true, 0, nil
+	}
+
+	// Если подписка отменена, проверяем grace period (30 дней)
+	if subscription.Status == "cancelled" {
+		if subscription.CancelledAt != nil {
+			gracePeriodEnd := subscription.CancelledAt.AddDate(0, 0, 30)
+			if time.Now().Before(gracePeriodEnd) {
+				return "cancelled", true, 0, nil
+			}
+		}
+		// Grace period истек, проверяем бесплатные создания
+		remainingFree, err := ih.getRemainingFreeCreations(userID)
+		if err != nil {
+			return "cancelled", false, 0, err
+		}
+		return "cancelled", remainingFree > 0, remainingFree, nil
+	}
+
+	// Если подписка истекла
+	if subscription.Status == "expired" || time.Now().After(subscription.NextPayment) {
+		// Проверяем бесплатные создания
+		remainingFree, err := ih.getRemainingFreeCreations(userID)
+		if err != nil {
+			return "expired", false, 0, err
+		}
+		return "expired", remainingFree > 0, remainingFree, nil
+	}
+
+	// По умолчанию разрешаем создание
+	return "unknown", true, 0, nil
+}
+
+// getRemainingFreeCreations возвращает количество оставшихся бесплатных созданий
+func (ih *InlineHandler) getRemainingFreeCreations(userID int64) (int, error) {
+	// TODO: Реализовать подсчет бесплатных созданий за текущий месяц
+	// Пока возвращаем 5 (максимум бесплатных созданий в месяц)
+	return 5, nil
+}
+
+// createSubscriptionKeyboard создает клавиатуру для подписки
+func (ih *InlineHandler) createSubscriptionKeyboard(userID int64, subscriptionStatus string, remainingFree int) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Кнопка оформления подписки
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("💳 Оформить подписку", "buy_premium"),
+	))
+
+	// Если есть бесплатные создания, добавляем кнопку продолжить
+	if remainingFree > 0 {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎁 Продолжить создание", "create_post"),
+		))
+	}
+
+	// Кнопка возврата в главное меню
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
+	))
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }

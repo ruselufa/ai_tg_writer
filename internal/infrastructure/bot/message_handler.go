@@ -123,7 +123,7 @@ func (mh *MessageHandler) handleVoiceMessage(bot *Bot, message *tgbotapi.Message
 			state.PendingEdits = make(map[string]*VoiceTranscription)
 		}
 
-		mh.stateManager.AddPendingEdit(userID, message.MessageID, message.Voice.FileID)
+		mh.stateManager.AddPendingEdit(userID, message.MessageID, message.Voice.FileID, message.Voice.Duration, message.Voice.FileSize)
 
 		// Обновляем путь к файлу и статус
 		if voice, ok := state.PendingEdits[message.Voice.FileID]; ok {
