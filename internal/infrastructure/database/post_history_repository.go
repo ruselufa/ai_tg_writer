@@ -281,3 +281,50 @@ func (r *PostHistoryRepository) UpdateVoiceFileInfo(id int, voiceDuration int, v
 	_, err := r.db.Exec(query, voiceDuration, voiceFileSize, id)
 	return err
 }
+
+// GetUserSavedPosts возвращает сохраненные посты пользователя с пагинацией
+func (r *PostHistoryRepository) GetUserSavedPosts(userID int64, limit int, offset int) ([]*PostHistory, error) {
+	query := `
+		SELECT id, user_id, voice_text, voice_file_id, voice_duration, voice_file_size,
+			   voice_sent_at, voice_received_at, ai_sent_at, ai_received_at,
+			   ai_response, ai_model, ai_tokens_used, ai_cost, is_saved, saved_at,
+			   processing_duration_ms, whisper_duration_ms, ai_generation_duration_ms,
+			   created_at, updated_at
+		FROM post_history 
+		WHERE user_id = $1 AND is_saved = true
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+
+	rows, err := r.db.Query(query, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var posts []*PostHistory
+	for rows.Next() {
+		history := &PostHistory{}
+		err := rows.Scan(
+			&history.ID, &history.UserID, &history.VoiceText, &history.VoiceFileID, &history.VoiceDuration, &history.VoiceFileSize,
+			&history.VoiceSentAt, &history.VoiceReceivedAt, &history.AISentAt, &history.AIReceivedAt,
+			&history.AIResponse, &history.AIModel, &history.AITokensUsed, &history.AICost, &history.IsSaved, &history.SavedAt,
+			&history.ProcessingDurationMs, &history.WhisperDurationMs, &history.AIGenerationDurationMs,
+			&history.CreatedAt, &history.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		posts = append(posts, history)
+	}
+
+	return posts, nil
+}
+
+// GetUserSavedPostsCount возвращает общее количество сохраненных постов пользователя
+func (r *PostHistoryRepository) GetUserSavedPostsCount(userID int64) (int, error) {
+	query := `SELECT COUNT(*) FROM post_history WHERE user_id = $1 AND is_saved = true`
+
+	var count int
+	err := r.db.QueryRow(query, userID).Scan(&count)
+	return count, err
+}

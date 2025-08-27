@@ -118,7 +118,7 @@ func main() {
 
 	voiceHandler := voice.NewVoiceHandler(botAPI, postHistoryRepo)
 	stateManager := bot.NewStateManager(db)
-	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler, subscriptionService)
+	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler, subscriptionService, postHistoryRepo)
 	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler, inlineHandler)
 	fmt.Println("Обработчики созданы")
 	// Настраиваем обновления

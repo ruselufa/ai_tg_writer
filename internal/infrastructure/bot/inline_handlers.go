@@ -2,12 +2,14 @@ package bot
 
 import (
 	"ai_tg_writer/internal/domain"
+	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/voice"
 	"ai_tg_writer/internal/service"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,11 +21,12 @@ type InlineHandler struct {
 	stateManager        *StateManager
 	voiceHandler        *voice.VoiceHandler
 	subscriptionService *service.SubscriptionService
+	postHistoryRepo     *database.PostHistoryRepository
 	prompts             map[string]Prompt
 }
 
 // NewInlineHandler создает новый обработчик inline-команд
-func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandler, subscriptionService *service.SubscriptionService) *InlineHandler {
+func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandler, subscriptionService *service.SubscriptionService, postHistoryRepo *database.PostHistoryRepository) *InlineHandler {
 	// Загружаем промпты
 	promptsFile, err := os.ReadFile("internal/infrastructure/prompts/prompts.json")
 	if err != nil {
@@ -41,6 +44,7 @@ func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandl
 		stateManager:        stateManager,
 		voiceHandler:        voiceHandler,
 		subscriptionService: subscriptionService,
+		postHistoryRepo:     postHistoryRepo,
 		prompts:             prompts,
 	}
 }
@@ -78,6 +82,18 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleHelp(bot, callback)
 	case "profile":
 		ih.handleProfile(bot, callback)
+	case "post_history":
+		ih.handlePostHistory(bot, callback, 1)
+	case "post_history_1", "post_history_2", "post_history_3", "post_history_4", "post_history_5", "post_history_6", "post_history_7", "post_history_8", "post_history_9", "post_history_10":
+		// Извлекаем номер страницы из callback data
+		pageStr := callback.Data[len("post_history_"):]
+		page, _ := strconv.Atoi(pageStr)
+		ih.handlePostHistory(bot, callback, page)
+	case "view_post_1", "view_post_2", "view_post_3", "view_post_4", "view_post_5", "view_post_6", "view_post_7", "view_post_8", "view_post_9", "view_post_10":
+		// Извлекаем номер поста из callback data
+		postStr := callback.Data[len("view_post_"):]
+		postNumber, _ := strconv.Atoi(postStr)
+		ih.handleViewPost(bot, callback, postNumber)
 	case "subscription":
 		ih.handleSubscription(bot, callback)
 	case "buy_premium":
@@ -100,6 +116,21 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		// Игнорируем нажатие на пробел-заглушку
 		return
 	default:
+		// Проверяем, не является ли это callback для страниц истории или просмотра постов
+		if strings.HasPrefix(callback.Data, "post_history_") {
+			pageStr := callback.Data[len("post_history_"):]
+			if page, err := strconv.Atoi(pageStr); err == nil {
+				ih.handlePostHistory(bot, callback, page)
+				return
+			}
+		}
+		if strings.HasPrefix(callback.Data, "view_post_") {
+			postStr := callback.Data[len("view_post_"):]
+			if postNumber, err := strconv.Atoi(postStr); err == nil {
+				ih.handleViewPost(bot, callback, postNumber)
+				return
+			}
+		}
 		ih.handleUnknownCallback(bot, callback)
 	}
 }
@@ -967,6 +998,9 @@ func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuer
 
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("📚 История постов", "post_history"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("💳 Приобрести подписку", "buy_premium"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
@@ -984,6 +1018,9 @@ func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuer
 ✅ Статус: активна`, userID, nextPay)
 
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("📚 История постов", "post_history"),
+			),
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
 			),
@@ -1559,4 +1596,170 @@ func (ih *InlineHandler) createSubscriptionKeyboard(userID int64, subscriptionSt
 	))
 
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// handlePostHistory обрабатывает просмотр истории постов
+func (ih *InlineHandler) handlePostHistory(bot *Bot, callback *tgbotapi.CallbackQuery, page int) {
+	userID := callback.From.ID
+	const postsPerPage = 10
+	offset := (page - 1) * postsPerPage
+
+	// Получаем посты пользователя с is_saved=TRUE
+	posts, err := ih.postHistoryRepo.GetUserSavedPosts(userID, postsPerPage, offset)
+	if err != nil {
+		log.Printf("Ошибка получения истории постов: %v", err)
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка получения истории постов",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	log.Printf("Получено постов: %d", len(posts))
+	for i, post := range posts {
+		log.Printf("Пост %d: ID=%d, AIResponse=%s", i+1, post.ID, post.AIResponse)
+	}
+
+	// Получаем общее количество постов для пагинации
+	totalPosts, err := ih.postHistoryRepo.GetUserSavedPostsCount(userID)
+	if err != nil {
+		log.Printf("Ошибка получения количества постов: %v", err)
+	}
+
+	var messageText string
+	if len(posts) == 0 {
+		messageText = "📚 История постов\n\nУ вас пока нет сохраненных постов."
+	} else {
+		messageText = fmt.Sprintf("📚 История постов (страница %d)\n\n", page)
+		for i, post := range posts {
+			postNumber := offset + i + 1
+			// Безопасно обрезаем AI ответ до 30 символов с проверкой UTF-8
+			shortText := post.AIResponse
+			if len(shortText) > 30 {
+				// Проверяем, что обрезание не нарушает UTF-8
+				runes := []rune(shortText)
+				if len(runes) > 30 {
+					shortText = string(runes[:30]) + "..."
+				}
+			}
+			// Очищаем текст от недопустимых символов
+			shortText = strings.Map(func(r rune) rune {
+				if r < 32 && r != '\n' && r != '\t' {
+					return -1 // Удаляем управляющие символы
+				}
+				return r
+			}, shortText)
+			messageText += fmt.Sprintf("%d. %s\n", postNumber, shortText)
+		}
+	}
+
+	// Создаем клавиатуру
+	var keyboardRows [][]tgbotapi.InlineKeyboardButton
+
+	// Кнопки с номерами постов
+	if len(posts) > 0 {
+		var postButtons []tgbotapi.InlineKeyboardButton
+		for i := range posts {
+			postNumber := offset + i + 1
+			postButtons = append(postButtons, tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("%d", postNumber),
+				fmt.Sprintf("view_post_%d", postNumber),
+			))
+		}
+		// Разбиваем кнопки на ряды по 5
+		for i := 0; i < len(postButtons); i += 5 {
+			end := i + 5
+			if end > len(postButtons) {
+				end = len(postButtons)
+			}
+			keyboardRows = append(keyboardRows, postButtons[i:end])
+		}
+	}
+
+	// Кнопки пагинации
+	if totalPosts > postsPerPage {
+		var paginationRow []tgbotapi.InlineKeyboardButton
+
+		if page > 1 {
+			paginationRow = append(paginationRow, tgbotapi.NewInlineKeyboardButtonData(
+				"⬅️ Назад",
+				fmt.Sprintf("post_history_%d", page-1),
+			))
+		}
+
+		if offset+postsPerPage < totalPosts {
+			paginationRow = append(paginationRow, tgbotapi.NewInlineKeyboardButtonData(
+				"Вперед ➡️",
+				fmt.Sprintf("post_history_%d", page+1),
+			))
+		}
+
+		if len(paginationRow) > 0 {
+			keyboardRows = append(keyboardRows, paginationRow)
+		}
+	}
+
+	// Кнопка возврата в профиль
+	keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в профиль", "profile"),
+	))
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(keyboardRows...)
+
+	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, messageText)
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// handleViewPost обрабатывает просмотр конкретного поста
+func (ih *InlineHandler) handleViewPost(bot *Bot, callback *tgbotapi.CallbackQuery, postNumber int) {
+	userID := callback.From.ID
+	const postsPerPage = 10
+
+	// Вычисляем страницу и позицию поста
+	page := ((postNumber - 1) / postsPerPage) + 1
+	positionOnPage := (postNumber - 1) % postsPerPage
+	offset := (page - 1) * postsPerPage
+
+	// Получаем посты для страницы
+	posts, err := ih.postHistoryRepo.GetUserSavedPosts(userID, postsPerPage, offset)
+	if err != nil {
+		log.Printf("Ошибка получения постов: %v", err)
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка получения поста",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Проверяем, что пост существует
+	if positionOnPage >= len(posts) {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Пост не найден",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	post := posts[positionOnPage]
+
+	// Формируем текст поста
+	messageText := fmt.Sprintf("📚 Пост #%d\n\n%s", postNumber, post.AIResponse)
+
+	// Создаем клавиатуру с кнопкой назад
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад к истории", fmt.Sprintf("post_history_%d", page)),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, messageText)
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
 }
