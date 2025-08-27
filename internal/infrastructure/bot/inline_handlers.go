@@ -84,6 +84,8 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleProfile(bot, callback)
 	case "post_history":
 		ih.handlePostHistory(bot, callback, 1)
+	case "payment_history":
+		ih.handlePaymentHistory(bot, callback)
 	case "post_history_1", "post_history_2", "post_history_3", "post_history_4", "post_history_5", "post_history_6", "post_history_7", "post_history_8", "post_history_9", "post_history_10":
 		// Извлекаем номер страницы из callback data
 		pageStr := callback.Data[len("post_history_"):]
@@ -1001,6 +1003,9 @@ func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuer
 				tgbotapi.NewInlineKeyboardButtonData("📚 История постов", "post_history"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💰 История оплат", "payment_history"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("💳 Приобрести подписку", "buy_premium"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
@@ -1020,6 +1025,9 @@ func (ih *InlineHandler) handleProfile(bot *Bot, callback *tgbotapi.CallbackQuer
 		keyboard = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("📚 История постов", "post_history"),
+			),
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("💰 История оплат", "payment_history"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("❌ Отменить подписку и отвязать карту", "cancel_subscription"),
@@ -1756,6 +1764,98 @@ func (ih *InlineHandler) handleViewPost(bot *Bot, callback *tgbotapi.CallbackQue
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад к истории", fmt.Sprintf("post_history_%d", page)),
+		),
+	)
+
+	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, messageText)
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
+}
+
+// handlePaymentHistory обрабатывает просмотр истории оплат пользователя
+func (ih *InlineHandler) handlePaymentHistory(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Получаем историю всех платежей пользователя
+	subscriptions, err := ih.subscriptionService.GetUserPaymentHistory(userID)
+	if err != nil {
+		log.Printf("Ошибка получения истории оплат: %v", err)
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка получения истории оплат",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	var messageText string
+	if len(subscriptions) == 0 {
+		messageText = "💰 История оплат\n\nУ вас пока нет истории платежей."
+	} else {
+		messageText = "💰 История оплат\n\n"
+		for i, sub := range subscriptions {
+			// Форматируем дату создания
+			createdDate := sub.CreatedAt.Format("02.01.2006 15:04")
+
+			// Форматируем статус
+			var statusEmoji, statusText string
+			switch sub.Status {
+			case "active":
+				statusEmoji = "✅"
+				statusText = "Активна"
+			case "pending":
+				statusEmoji = "⏳"
+				statusText = "Ожидает оплаты"
+			case "cancelled":
+				statusEmoji = "❌"
+				statusText = "Отменена"
+			case "expired":
+				statusEmoji = "⏰"
+				statusText = "Истекла"
+			case "suspended":
+				statusEmoji = "🚫"
+				statusText = "Приостановлена"
+			default:
+				statusEmoji = "❓"
+				statusText = sub.Status
+			}
+
+			// Форматируем сумму
+			amountText := fmt.Sprintf("%.0f₽", sub.Amount)
+
+			// Форматируем тариф
+			tariffText := sub.Tariff
+			if tariffText == "" {
+				tariffText = "Не указан"
+			}
+
+			messageText += fmt.Sprintf("%d. %s %s\n", i+1, statusEmoji, statusText)
+			messageText += fmt.Sprintf("   💰 Сумма: %s\n", amountText)
+			messageText += fmt.Sprintf("   📅 Дата: %s\n", createdDate)
+			messageText += fmt.Sprintf("   🏷️ Тариф: %s\n", tariffText)
+
+			// Добавляем дополнительную информацию в зависимости от статуса
+			if sub.Status == "active" && !sub.NextPayment.IsZero() {
+				nextPay := sub.NextPayment.Format("02.01.2006")
+				messageText += fmt.Sprintf("   ⏰ Следующий платеж: %s\n", nextPay)
+			}
+			if sub.CancelledAt != nil {
+				cancelledDate := sub.CancelledAt.Format("02.01.2006")
+				messageText += fmt.Sprintf("   🚫 Отменена: %s\n", cancelledDate)
+			}
+			if sub.FailedAttempts > 0 {
+				messageText += fmt.Sprintf("   ⚠️ Неудачных попыток: %d\n", sub.FailedAttempts)
+			}
+
+			messageText += "\n"
+		}
+	}
+
+	// Создаем клавиатуру с кнопкой возврата
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в профиль", "profile"),
 		),
 	)
 

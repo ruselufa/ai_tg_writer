@@ -56,12 +56,13 @@ type SubscriptionRepository interface {
 	Cancel(userID int64) error
 	GetActiveSubscriptions() ([]*Subscription, error)
 	UpdateYooKassaBindings(userID int64, customerID, paymentMethodID, lastPaymentID string) error
-	GetSubscriptionsDueForRenewal() ([]*Subscription, error) // Получает подписки для продления
-	GetSubscriptionsDueForRetry() ([]*Subscription, error)   // Получает подписки для повторной попытки
-	IncrementFailedAttempts(userID int64) error              // Увеличивает счетчик неудачных попыток
-	SuspendSubscription(userID int64) error                  // Приостанавливает подписку
-	GetAllActiveSubscriptions() ([]*Subscription, error)     // Получает все активные подписки для диагностики
-	CancelExpired(userID int64) error                        // Полностью отменяет подписку когда период истек
+	GetSubscriptionsDueForRenewal() ([]*Subscription, error)     // Получает подписки для продления
+	GetSubscriptionsDueForRetry() ([]*Subscription, error)       // Получает подписки для повторной попытки
+	IncrementFailedAttempts(userID int64) error                  // Увеличивает счетчик неудачных попыток
+	SuspendSubscription(userID int64) error                      // Приостанавливает подписку
+	GetAllActiveSubscriptions() ([]*Subscription, error)         // Получает все активные подписки для диагностики
+	GetUserPaymentHistory(userID int64) ([]*Subscription, error) // Получает историю всех платежей пользователя
+	CancelExpired(userID int64) error                            // Полностью отменяет подписку когда период истек
 }
 
 // SubscriptionService интерфейс для бизнес-логики подписок
@@ -78,8 +79,9 @@ type SubscriptionService interface {
 	ProcessRecurringPayment(subscription *Subscription) error
 	GetAvailableTariffs() []Tariff
 	GetSubscriptionsDueForRetry() ([]*Subscription, error)
-	GetAllActiveSubscriptions() ([]*Subscription, error) // Получает все активные подписки для диагностики
-	RetryPayment(userID int64) error                     // Повторная попытка списания с текущего метода
-	ChangePaymentMethod(userID int64) (string, error)    // Смена метода оплаты
-	CancelExpiredSubscription(userID int64) error        // Полная отмена истекшей отмененной подписки
+	GetAllActiveSubscriptions() ([]*Subscription, error)         // Получает все активные подписки для диагностики
+	GetUserPaymentHistory(userID int64) ([]*Subscription, error) // Получает историю всех платежей пользователя
+	RetryPayment(userID int64) error                             // Повторная попытка списания с текущего метода
+	ChangePaymentMethod(userID int64) (string, error)            // Смена метода оплаты
+	CancelExpiredSubscription(userID int64) error                // Полная отмена истекшей отмененной подписки
 }

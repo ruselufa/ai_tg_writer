@@ -438,6 +438,11 @@ func (s *SubscriptionService) GetAllActiveSubscriptions() ([]*domain.Subscriptio
 	return s.repo.GetAllActiveSubscriptions()
 }
 
+// GetUserPaymentHistory получает историю всех платежей пользователя
+func (s *SubscriptionService) GetUserPaymentHistory(userID int64) ([]*domain.Subscription, error) {
+	return s.repo.GetUserPaymentHistory(userID)
+}
+
 // RetryPayment пытается списать деньги с текущего метода оплаты
 func (s *SubscriptionService) RetryPayment(userID int64) error {
 	// Используем GetAnyByUserID чтобы найти подписку независимо от статуса active

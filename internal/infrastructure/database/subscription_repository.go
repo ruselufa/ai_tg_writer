@@ -561,3 +561,86 @@ func (r *SubscriptionRepository) GetAllActiveSubscriptions() ([]*domain.Subscrip
 
 	return subscriptions, nil
 }
+
+// GetUserPaymentHistory получает историю всех платежей пользователя
+func (r *SubscriptionRepository) GetUserPaymentHistory(userID int64) ([]*domain.Subscription, error) {
+	query := `
+		SELECT id, user_id, subscription_id, tariff, status, amount, next_payment, last_payment, created_at, cancelled_at, active,
+		       yk_customer_id, yk_payment_method_id, yk_last_payment_id, failed_attempts, next_retry, suspended_at
+		FROM subscriptions
+		WHERE user_id = $1
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subscriptions []*domain.Subscription
+	for rows.Next() {
+		subscription := &domain.Subscription{}
+		
+		// Используем временные переменные для полей, которые могут быть NULL
+		var nextPayment, lastPayment, cancelledAt, nextRetry, suspendedAt sql.NullTime
+		var ykCustomerID, ykPaymentMethodID, ykLastPaymentID sql.NullString
+		var subscriptionID sql.NullInt32
+		
+		err := rows.Scan(
+			&subscription.ID,
+			&subscription.UserID,
+			&subscriptionID,
+			&subscription.Tariff,
+			&subscription.Status,
+			&subscription.Amount,
+			&nextPayment,
+			&lastPayment,
+			&subscription.CreatedAt,
+			&cancelledAt,
+			&subscription.Active,
+			&ykCustomerID,
+			&ykPaymentMethodID,
+			&ykLastPaymentID,
+			&subscription.FailedAttempts,
+			&nextRetry,
+			&suspendedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Копируем значения из временных переменных
+		if subscriptionID.Valid {
+			val := int(subscriptionID.Int32)
+			subscription.SubscriptionID = &val
+		}
+		if nextPayment.Valid {
+			subscription.NextPayment = nextPayment.Time
+		}
+		if lastPayment.Valid {
+			subscription.LastPayment = lastPayment.Time
+		}
+		if cancelledAt.Valid {
+			subscription.CancelledAt = &cancelledAt.Time
+		}
+		if ykCustomerID.Valid {
+			subscription.YKCustomerID = &ykCustomerID.String
+		}
+		if ykPaymentMethodID.Valid {
+			subscription.YKPaymentMethodID = &ykPaymentMethodID.String
+		}
+		if ykLastPaymentID.Valid {
+			subscription.YKLastPaymentID = &ykPaymentMethodID.String
+		}
+		if nextRetry.Valid {
+			subscription.NextRetry = &nextRetry.Time
+		}
+		if suspendedAt.Valid {
+			subscription.SuspendedAt = &suspendedAt.Time
+		}
+		
+		subscriptions = append(subscriptions, subscription)
+	}
+
+	return subscriptions, nil
+}
