@@ -215,15 +215,15 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	results := make([]string, 0)
 	var firstHistoryID int
 
-		// Обрабатываем каждое голосовое сообщение последовательно для правильной группировки
+	// Обрабатываем каждое голосовое сообщение последовательно для правильной группировки
 	voiceCount := 0
 	var allVoiceTexts []string
 	var totalDuration int
 	var totalFileSize int
-	
+
 	for fileID, voice := range state.PendingVoices {
 		voiceCount++
-		
+
 		// Транскрибируем файл
 		isFirstMessage := voiceCount == 1
 		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize, isFirstMessage, firstHistoryID)
@@ -245,13 +245,13 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 			firstHistoryID = historyID
 			log.Printf("Установлен первый historyID для поста: %d", firstHistoryID)
 		}
-		
+
 		// Удаляем временный файл
 		if err := os.Remove(voice.FilePath); err != nil {
 			log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
 		}
 	}
-	
+
 	// Обновляем запись истории с полной информацией
 	if firstHistoryID > 0 && len(allVoiceTexts) > 0 {
 		combinedText := strings.Join(allVoiceTexts, "\n\n")
@@ -500,6 +500,7 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 
 	// Отмечаем в истории как сохраненный
 	if state.CurrentPost.HistoryID > 0 {
+		log.Printf("Отмечаем пост как сохраненный в истории ID: %d", state.CurrentPost.HistoryID)
 		err := ih.voiceHandler.MarkPostAsSaved(state.CurrentPost.HistoryID)
 		if err != nil {
 			log.Printf("Ошибка отметки поста как сохраненного: %v", err)
@@ -564,6 +565,7 @@ func (ih *InlineHandler) handleApprove(bot *Bot, callback *tgbotapi.CallbackQuer
 
 		// Отмечаем в истории как сохраненный
 		if state.CurrentPost.HistoryID > 0 {
+			log.Printf("Отмечаем пост как сохраненный в истории ID: %d", state.CurrentPost.HistoryID)
 			err := ih.voiceHandler.MarkPostAsSaved(state.CurrentPost.HistoryID)
 			if err != nil {
 				log.Printf("Ошибка отметки поста как сохраненного: %v", err)
@@ -727,6 +729,10 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 	state.CurrentPost.Content = cleanText
 	state.CurrentPost.Entities = entities
 	state.CurrentPost.Messages = append(state.CurrentPost.Messages, results...)
+	// Обновляем HistoryID на новую запись с правками
+	state.CurrentPost.HistoryID = firstHistoryID
+	// Сохраняем обновленный пост в состоянии
+	ih.stateManager.SetCurrentPost(userID, state.CurrentPost)
 	ih.stateManager.SetLastGeneratedText(userID, updatedText)
 	ih.stateManager.SetApprovalStatus(userID, "pending")
 
