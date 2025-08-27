@@ -146,7 +146,7 @@ func (mh *MessageHandler) handleVoiceMessage(bot *Bot, message *tgbotapi.Message
 		}
 
 		// Добавляем сообщение в очередь
-		mh.stateManager.AddPendingVoice(userID, message.MessageID, message.Voice.FileID)
+		mh.stateManager.AddPendingVoice(userID, message.MessageID, message.Voice.FileID, message.Voice.Duration, message.Voice.FileSize)
 
 		// Обновляем путь к файлу и статус
 		if voice, ok := state.PendingVoices[message.Voice.FileID]; ok {

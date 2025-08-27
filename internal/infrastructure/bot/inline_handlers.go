@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -212,41 +211,46 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	)
 	bot.Send(msg)
 
-	// Создаем WaitGroup для ожидания обработки всех сообщений
-	var wg sync.WaitGroup
+	// Обрабатываем голосовые сообщения последовательно
 	results := make([]string, 0)
-	resultsMutex := &sync.Mutex{}
+	var firstHistoryID int
 
-	// Обрабатываем каждое голосовое сообщение параллельно
+	// Обрабатываем каждое голосовое сообщение последовательно для правильной группировки
+	voiceCount := 0
 	for fileID, voice := range state.PendingVoices {
-		wg.Add(1)
-		go func(fileID string, voice *VoiceTranscription) {
-			defer wg.Done()
+		voiceCount++
 
-			// Транскрибируем файл
-			text, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath)
-			if err != nil {
-				log.Printf("Ошибка обработки голосового сообщения: %v", err)
-				ih.stateManager.UpdateVoiceTranscription(userID, fileID, "", err)
-				return
+		// Транскрибируем файл
+		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize)
+		if err != nil {
+			log.Printf("Ошибка обработки голосового сообщения: %v", err)
+			ih.stateManager.UpdateVoiceTranscription(userID, fileID, "", err)
+			continue
+		}
+
+		// Сохраняем результат
+		results = append(results, text)
+		ih.stateManager.UpdateVoiceTranscription(userID, fileID, text, nil)
+
+		// Первое сообщение создает запись в истории
+		if voiceCount == 1 {
+			firstHistoryID = historyID
+			log.Printf("Установлен первый historyID для поста: %d", firstHistoryID)
+		} else {
+			// Последующие сообщения добавляются к существующей записи
+			if firstHistoryID > 0 {
+				err = ih.voiceHandler.AddVoiceToHistory(firstHistoryID, text, voice.Duration, voice.FileSize)
+				if err != nil {
+					log.Printf("Ошибка добавления голосового сообщения к истории: %v", err)
+				}
 			}
+		}
 
-			// Сохраняем результат
-			resultsMutex.Lock()
-			results = append(results, text)
-			resultsMutex.Unlock()
-
-			ih.stateManager.UpdateVoiceTranscription(userID, fileID, text, nil)
-
-			// Удаляем временный файл
-			if err := os.Remove(voice.FilePath); err != nil {
-				log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
-			}
-		}(fileID, voice)
+		// Удаляем временный файл
+		if err := os.Remove(voice.FilePath); err != nil {
+			log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
+		}
 	}
-
-	// Ждем завершения обработки всех сообщений
-	wg.Wait()
 
 	// Проверяем результаты
 	if len(results) == 0 {
@@ -266,7 +270,7 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	allMessages := strings.Join(fragments, "\n\n")
 
 	// Генерируем готовый пост через VoiceHandler
-	postText, err := ih.voiceHandler.GenerateTelegramPost(allMessages)
+	postText, err := ih.voiceHandler.GenerateTelegramPost(allMessages, userID, firstHistoryID)
 	if err != nil {
 		log.Printf("Ошибка генерации поста: %v", err)
 		msg := tgbotapi.NewMessage(
@@ -291,6 +295,7 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 		Messages:    results,
 		Entities:    entities,
 		Styling:     state.PostStyling,
+		HistoryID:   firstHistoryID,
 	}
 
 	// Сохраняем пост
@@ -484,6 +489,14 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 	ih.stateManager.SavePost(userID, *state.CurrentPost)
 	log.Printf("Пост сохранен в БД (заглушка): %s", state.CurrentPost.ContentType)
 
+	// Отмечаем в истории как сохраненный
+	if state.CurrentPost.HistoryID > 0 {
+		err := ih.voiceHandler.MarkPostAsSaved(state.CurrentPost.HistoryID)
+		if err != nil {
+			log.Printf("Ошибка отметки поста как сохраненного: %v", err)
+		}
+	}
+
 	// Сохраняем данные поста перед очисткой состояния
 	postContent := state.CurrentPost.Content
 	postEntities := state.CurrentPost.Entities
@@ -539,6 +552,14 @@ func (ih *InlineHandler) handleApprove(bot *Bot, callback *tgbotapi.CallbackQuer
 	if state.CurrentPost != nil {
 		ih.stateManager.SavePost(userID, *state.CurrentPost)
 		log.Printf("Пост сохранен в БД (заглушка): %s", state.CurrentPost.ContentType)
+
+		// Отмечаем в истории как сохраненный
+		if state.CurrentPost.HistoryID > 0 {
+			err := ih.voiceHandler.MarkPostAsSaved(state.CurrentPost.HistoryID)
+			if err != nil {
+				log.Printf("Ошибка отметки поста как сохраненного: %v", err)
+			}
+		}
 
 		// Сохраняем данные поста перед очисткой состояния
 		postContent = state.CurrentPost.Content
@@ -623,38 +644,33 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 	)
 	bot.Send(msg)
 
-	// Создаем WaitGroup для ожидания обработки всех сообщений
-	var wg sync.WaitGroup
+	// Обрабатываем голосовые сообщения с правками последовательно
 	results := make([]string, 0)
-	resultsMutex := &sync.Mutex{}
+	var firstHistoryID int
 
-	// Обрабатываем каждое голосовое сообщение с правками параллельно
+	// Обрабатываем каждое голосовое сообщение с правками последовательно
 	for fileID, voice := range state.PendingEdits {
-		wg.Add(1)
-		go func(fileID string, voice *VoiceTranscription) {
-			defer wg.Done()
+		// Транскрибируем файл
+		text, historyID, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath, userID, fileID, voice.Duration, voice.FileSize)
+		if err != nil {
+			log.Printf("Ошибка обработки голосового сообщения с правками: %v", err)
+			continue
+		}
 
-			// Транскрибируем файл
-			text, err := ih.voiceHandler.TranscribeVoiceFile(voice.FilePath)
-			if err != nil {
-				log.Printf("Ошибка обработки голосового сообщения с правками: %v", err)
-				return
-			}
+		// Сохраняем результат
+		results = append(results, text)
 
-			// Сохраняем результат
-			resultsMutex.Lock()
-			results = append(results, text)
-			resultsMutex.Unlock()
+		// Сохраняем первый historyID для поста
+		if firstHistoryID == 0 && historyID > 0 {
+			firstHistoryID = historyID
+			log.Printf("Установлен первый historyID для поста (правки): %d", firstHistoryID)
+		}
 
-			// Удаляем временный файл
-			if err := os.Remove(voice.FilePath); err != nil {
-				log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
-			}
-		}(fileID, voice)
+		// Удаляем временный файл
+		if err := os.Remove(voice.FilePath); err != nil {
+			log.Printf("Ошибка удаления временного файла %s: %v", voice.FilePath, err)
+		}
 	}
-
-	// Ждем завершения обработки всех сообщений
-	wg.Wait()
 
 	// Проверяем результаты
 	if len(results) == 0 {
@@ -679,7 +695,7 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 	prompt := fmt.Sprintf("Исходный текст:\n%s\n\nПравки пользователя:\n%s\n\nПожалуйста, внесите изменения в исходный текст согласно правкам пользователя.", originalText, editText)
 
 	// Генерируем обновленный пост через VoiceHandler
-	updatedText, err := ih.voiceHandler.GenerateTelegramPost(prompt)
+	updatedText, err := ih.voiceHandler.GenerateTelegramPost(prompt, userID, firstHistoryID)
 	if err != nil {
 		log.Printf("Ошибка генерации обновленного поста: %v", err)
 		msg := tgbotapi.NewMessage(

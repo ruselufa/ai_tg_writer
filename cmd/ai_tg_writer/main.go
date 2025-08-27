@@ -113,7 +113,10 @@ func main() {
 	// Настраиваем graceful shutdown
 	setupGracefulShutdown(cancel)
 
-	voiceHandler := voice.NewVoiceHandler(botAPI)
+	// Создаем репозиторий для истории постов
+	postHistoryRepo := database.NewPostHistoryRepository(db.DB)
+	
+	voiceHandler := voice.NewVoiceHandler(botAPI, postHistoryRepo)
 	stateManager := bot.NewStateManager(db)
 	inlineHandler := bot.NewInlineHandler(stateManager, voiceHandler)
 	messageHandler := bot.NewMessageHandler(stateManager, voiceHandler, inlineHandler)

@@ -14,6 +14,7 @@ type Post struct {
 	Entities    []MessageEntity // Telegram entities для форматирования
 	Styling     PostStyling     // настройки стилизации, использованные при создании
 	MessageID   int             // ID сообщения в Telegram с готовым постом
+	HistoryID   int             // ID записи в истории постов
 }
 
 // UserState хранит состояние пользователя
@@ -42,6 +43,8 @@ type VoiceTranscription struct {
 	MessageID int    // ID сообщения в Telegram
 	FileID    string // ID файла голосового сообщения
 	FilePath  string // Путь к скачанному файлу
+	Duration  int    // Длительность голосового сообщения в секундах
+	FileSize  int    // Размер файла в байтах
 	Status    string // статус транскрипции (pending, completed, error)
 	Text      string // результат транскрипции
 	Error     error  // ошибка, если есть
@@ -210,11 +213,13 @@ func (sm *StateManager) GetLastPost(userID int64) *Post {
 }
 
 // AddPendingVoice добавляет голосовое сообщение в очередь на транскрипцию
-func (sm *StateManager) AddPendingVoice(userID int64, messageID int, fileID string) {
+func (sm *StateManager) AddPendingVoice(userID int64, messageID int, fileID string, duration int, fileSize int) {
 	state := sm.GetState(userID)
 	state.PendingVoices[fileID] = &VoiceTranscription{
 		MessageID: messageID,
 		FileID:    fileID,
+		Duration:  duration,
+		FileSize:  fileSize,
 		Status:    "pending",
 	}
 }
@@ -388,4 +393,21 @@ func (sm *StateManager) RestorePostMessage(userID int64) *Post {
 		return state.CurrentPost
 	}
 	return nil
+}
+
+// SetPostHistoryID устанавливает ID записи в истории постов
+func (sm *StateManager) SetPostHistoryID(userID int64, historyID int) {
+	state := sm.GetState(userID)
+	if state.CurrentPost != nil {
+		state.CurrentPost.HistoryID = historyID
+	}
+}
+
+// GetPostHistoryID возвращает ID записи в истории постов
+func (sm *StateManager) GetPostHistoryID(userID int64) int {
+	state := sm.GetState(userID)
+	if state.CurrentPost != nil {
+		return state.CurrentPost.HistoryID
+	}
+	return 0
 }
