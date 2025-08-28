@@ -567,11 +567,8 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 		return
 	}
 
-	// Увеличиваем счетчик использований ТОЛЬКО когда пользователь соглашается с результатом
-	err := ih.stateManager.IncrementUsage(userID)
-	if err != nil {
-		log.Printf("Ошибка увеличения счетчика: %v", err)
-	}
+	// Безопасно увеличиваем счетчик использований с проверкой подписки
+	ih.incrementUsageIfNeeded(userID)
 
 	// Сохраняем пост в БД (заглушка)
 	ih.stateManager.SavePost(userID, *state.CurrentPost)
@@ -604,7 +601,7 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 	bot.Send(deleteMsg)
 
 	// ЗАТЕМ отправляем готовый пост БЕЗ кнопок управления
-	_, err = bot.SendFormattedMessage(
+	_, err := bot.SendFormattedMessage(
 		callback.Message.Chat.ID,
 		postContent,
 		postEntities,
@@ -627,11 +624,8 @@ func (ih *InlineHandler) handleSavePost(bot *Bot, callback *tgbotapi.CallbackQue
 func (ih *InlineHandler) handleApprove(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
 
-	// Увеличиваем счетчик использований ТОЛЬКО когда пользователь соглашается с результатом
-	err := ih.stateManager.IncrementUsage(userID)
-	if err != nil {
-		log.Printf("Ошибка увеличения счетчика: %v", err)
-	}
+	// Безопасно увеличиваем счетчик использований с проверкой подписки
+	ih.incrementUsageIfNeeded(userID)
 
 	// Сохраняем пост в БД (заглушка)
 	state := ih.stateManager.GetState(userID)
@@ -1862,4 +1856,78 @@ func (ih *InlineHandler) handlePaymentHistory(bot *Bot, callback *tgbotapi.Callb
 	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, messageText)
 	msg.ReplyMarkup = &keyboard
 	bot.Send(msg)
+}
+
+// shouldIncrementUsage проверяет, нужно ли увеличивать счетчик использований
+// Возвращает true, если счетчик НЕ нужно увеличивать (есть активная подписка или grace period)
+func (ih *InlineHandler) shouldIncrementUsage(userID int64) (bool, error) {
+	// Получаем подписку пользователя
+	subscription, err := ih.subscriptionService.GetUserSubscription(userID)
+	if err != nil {
+		log.Printf("Ошибка получения подписки для проверки счетчика: %v", err)
+		return false, err
+	}
+
+	// Если нет подписки, нужно увеличивать счетчик
+	if subscription == nil {
+		log.Printf("[DEBUG] У пользователя %d нет подписки - увеличиваем счетчик", userID)
+		return false, nil
+	}
+
+	log.Printf("[DEBUG] Проверка счетчика для пользователя %d: status=%s, active=%v, cancelled_at=%v, next_payment=%v",
+		userID, subscription.Status, subscription.Active, subscription.CancelledAt, subscription.NextPayment)
+
+	// Если подписка активна, НЕ нужно увеличивать счетчик
+	if subscription.Status == "active" && subscription.Active {
+		log.Printf("[DEBUG] У пользователя %d активная подписка - НЕ увеличиваем счетчик", userID)
+		return true, nil
+	}
+
+	// Если подписка отменена, проверяем grace period
+	if subscription.Status == "cancelled" {
+		if subscription.CancelledAt != nil {
+			gracePeriodEnd := subscription.CancelledAt.AddDate(0, 0, 30)
+			now := time.Now()
+
+			// Если grace period активен И подписка еще не истекла, НЕ нужно увеличивать счетчик
+			if now.Before(gracePeriodEnd) && now.Before(subscription.NextPayment) {
+				log.Printf("[DEBUG] У пользователя %d активный grace period - НЕ увеличиваем счетчик", userID)
+				return true, nil
+			} else {
+				log.Printf("[DEBUG] У пользователя %d grace period истек или подписка истекла - увеличиваем счетчик", userID)
+			}
+		}
+	}
+
+	// Во всех остальных случаях нужно увеличивать счетчик
+	log.Printf("[DEBUG] У пользователя %d нет активной подписки или grace period - увеличиваем счетчик", userID)
+	return false, nil
+}
+
+// safeIncrementUsage безопасно увеличивает счетчик использований с проверкой подписки
+func (ih *InlineHandler) safeIncrementUsage(userID int64) error {
+	// Проверяем, нужно ли увеличивать счетчик использований
+	shouldNotIncrement, err := ih.shouldIncrementUsage(userID)
+	if err != nil {
+		log.Printf("Ошибка проверки необходимости увеличения счетчика: %v", err)
+		// В случае ошибки увеличиваем счетчик для безопасности
+		return ih.stateManager.IncrementUsage(userID)
+	}
+
+	if !shouldNotIncrement {
+		// Увеличиваем счетчик только если нет активной подписки или grace period
+		return ih.stateManager.IncrementUsage(userID)
+	} else {
+		log.Printf("Счетчик не увеличен - у пользователя активная подписка или grace period")
+		return nil
+	}
+}
+
+// incrementUsageIfNeeded увеличивает счетчик использований только если это необходимо
+// Используется для замены прямых вызовов stateManager.IncrementUsage
+func (ih *InlineHandler) incrementUsageIfNeeded(userID int64) {
+	err := ih.safeIncrementUsage(userID)
+	if err != nil {
+		log.Printf("Ошибка увеличения счетчика: %v", err)
+	}
 }

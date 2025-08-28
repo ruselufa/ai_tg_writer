@@ -2,6 +2,7 @@ package bot
 
 import (
 	"ai_tg_writer/internal/infrastructure/voice"
+	"fmt"
 	"log"
 	"regexp"
 	"strings"
@@ -62,16 +63,41 @@ func (mh *MessageHandler) HandleMessage(bot *Bot, message *tgbotapi.Message) boo
 		return false // сообщение не обработано
 	}
 
-	// Проверяем лимиты использования
-	withinLimit, err := mh.stateManager.CheckLimit(userID)
+	// Проверяем статус подписки с учетом grace period
+	subscriptionStatus, canCreate, remainingFree, err := mh.inlineHandler.checkUserSubscriptionStatus(userID)
 	if err != nil {
-		log.Printf("Ошибка проверки лимита: %v", err)
+		log.Printf("Ошибка проверки подписки: %v", err)
 		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при проверке лимита. Попробуйте позже.")
 		bot.Send(msg)
 		return true
 	}
-	if !withinLimit {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Вы превысили дневной лимит использования. Для увеличения лимита перейдите на премиум тариф (/subscription).")
+	if !canCreate {
+		// Показываем информацию о подписке и предлагаем оформить
+		keyboard := mh.inlineHandler.createSubscriptionKeyboard(userID, subscriptionStatus, remainingFree)
+
+		var messageText string
+		switch subscriptionStatus {
+		case "cancelled":
+			// Если canCreate = false, значит grace period истек
+			messageText = "❌ Ваша подписка была отменена.\n\n"
+		case "expired":
+			messageText = "⏰ Срок действия подписки истек.\n\n"
+		case "no_subscription":
+			messageText = "💎 У вас нет активной подписки.\n\n"
+		default:
+			messageText = "💎 Требуется подписка для создания контента.\n\n"
+		}
+
+		if remainingFree > 0 {
+			messageText += fmt.Sprintf("🎁 У вас осталось %d бесплатных созданий в этом месяце.\n\n", remainingFree)
+		} else {
+			messageText += "🎁 Бесплатные создания на этот месяц закончились.\n\n"
+		}
+
+		messageText += "💳 Оформите подписку для неограниченного создания контента!"
+
+		msg := tgbotapi.NewMessage(message.Chat.ID, messageText)
+		msg.ReplyMarkup = &keyboard
 		bot.Send(msg)
 		return true
 	}
@@ -89,16 +115,41 @@ func (mh *MessageHandler) handleVoiceMessage(bot *Bot, message *tgbotapi.Message
 	// Получаем состояние пользователя
 	state := mh.stateManager.GetState(userID)
 
-	// Проверяем лимит использования
-	canUse, err := mh.stateManager.CheckLimit(userID)
+	// Проверяем статус подписки с учетом grace period
+	subscriptionStatus, canCreate, remainingFree, err := mh.inlineHandler.checkUserSubscriptionStatus(userID)
 	if err != nil {
-		log.Printf("Ошибка проверки лимита: %v", err)
+		log.Printf("Ошибка проверки подписки: %v", err)
 		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при проверке лимита. Попробуйте позже.")
 		bot.Send(msg)
 		return
 	}
-	if !canUse {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Вы превысили лимит бесплатного использования. Для увеличения лимита перейдите на премиум тариф")
+	if !canCreate {
+		// Показываем информацию о подписке и предлагаем оформить
+		keyboard := mh.inlineHandler.createSubscriptionKeyboard(userID, subscriptionStatus, remainingFree)
+
+		var messageText string
+		switch subscriptionStatus {
+		case "cancelled":
+			// Если canCreate = false, значит grace period истек
+			messageText = "❌ Ваша подписка была отменена.\n\n"
+		case "expired":
+			messageText = "⏰ Срок действия подписки истек.\n\n"
+		case "no_subscription":
+			messageText = "💎 У вас нет активной подписки.\n\n"
+		default:
+			messageText = "💎 Требуется подписка для создания контента.\n\n"
+		}
+
+		if remainingFree > 0 {
+			messageText += fmt.Sprintf("🎁 У вас осталось %d бесплатных созданий в этом месяце.\n\n", remainingFree)
+		} else {
+			messageText += "🎁 Бесплатные создания на этот месяц закончились.\n\n"
+		}
+
+		messageText += "💳 Оформите подписку для неограниченного создания контента!"
+
+		msg := tgbotapi.NewMessage(message.Chat.ID, messageText)
+		msg.ReplyMarkup = &keyboard
 		bot.Send(msg)
 		mh.showSubscriptionPurchaseScreen(bot, message.Chat.ID, userID)
 		return

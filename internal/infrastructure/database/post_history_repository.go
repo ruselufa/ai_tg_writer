@@ -328,3 +328,16 @@ func (r *PostHistoryRepository) GetUserSavedPostsCount(userID int64) (int, error
 	err := r.db.QueryRow(query, userID).Scan(&count)
 	return count, err
 }
+
+// GetUserPostsCountThisMonth возвращает количество постов пользователя за текущий месяц
+func (r *PostHistoryRepository) GetUserPostsCountThisMonth(userID int64) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM post_history 
+		WHERE user_id = $1 
+		AND created_at >= date_trunc('month', CURRENT_DATE)
+		AND created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'`
+
+	var count int
+	err := r.db.QueryRow(query, userID).Scan(&count)
+	return count, err
+}
