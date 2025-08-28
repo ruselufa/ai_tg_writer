@@ -334,6 +334,7 @@ func (r *PostHistoryRepository) GetUserPostsCountThisMonth(userID int64) (int, e
 	query := `
 		SELECT COUNT(*) FROM post_history 
 		WHERE user_id = $1 
+		AND is_saved = true
 		AND created_at >= date_trunc('month', CURRENT_DATE)
 		AND created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'`
 

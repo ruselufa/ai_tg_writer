@@ -1555,25 +1555,35 @@ func (ih *InlineHandler) checkUserSubscriptionStatus(userID int64) (string, bool
 		return "cancelled", remainingFree > 0, remainingFree, nil
 	}
 
-	// Если подписка истекла
-	if subscription.Status == "expired" || time.Now().After(subscription.NextPayment) {
-		// Проверяем бесплатные создания
-		remainingFree, err := ih.getRemainingFreeCreations(userID)
-		if err != nil {
-			return "expired", false, 0, err
-		}
-		return "expired", remainingFree > 0, remainingFree, nil
+	// Если подписка истекла или имеет статус, который не дает неограниченного доступа
+	// Проверяем бесплатные создания
+	remainingFree, err := ih.getRemainingFreeCreations(userID)
+	if err != nil {
+		return "expired", false, 0, err
 	}
-
-	// По умолчанию разрешаем создание
-	return "unknown", true, 0, nil
+	return "expired", remainingFree > 0, remainingFree, nil
 }
 
 // getRemainingFreeCreations возвращает количество оставшихся бесплатных созданий
 func (ih *InlineHandler) getRemainingFreeCreations(userID int64) (int, error) {
-	// TODO: Реализовать подсчет бесплатных созданий за текущий месяц
-	// Пока возвращаем 5 (максимум бесплатных созданий в месяц)
-	return 5, nil
+	// Получаем количество использований за текущий месяц из usage_stats
+	usageThisMonth, err := ih.stateManager.db.GetUserUsageThisMonth(userID)
+	if err != nil {
+		log.Printf("Ошибка получения количества использований за месяц: %v", err)
+		return 0, err
+	}
+
+	// Максимум бесплатных созданий в месяц - 5
+	const maxFreePostsPerMonth = 5
+	remaining := maxFreePostsPerMonth - usageThisMonth
+
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	log.Printf("[DEBUG] У пользователя %d использований за месяц: %d, осталось бесплатных: %d", userID, usageThisMonth, remaining)
+
+	return remaining, nil
 }
 
 // createSubscriptionKeyboard создает клавиатуру для подписки

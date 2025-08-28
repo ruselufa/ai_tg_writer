@@ -183,6 +183,21 @@ func (db *DB) GetUserUsageTotal(userID int64) (int, error) {
 	return count, err
 }
 
+// GetUserUsageThisMonth получает количество использований пользователя за текущий месяц
+func (db *DB) GetUserUsageThisMonth(userID int64) (int, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COALESCE(SUM(usage_count), 0) FROM usage_stats 
+		WHERE user_id = $1 
+		AND date >= date_trunc('month', CURRENT_DATE)
+		AND date < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'`, userID).Scan(&count)
+
+	if err != nil {
+		return 0, nil
+	}
+	return count, err
+}
+
 // GetUserUsageToday получает количество использований пользователя сегодня
 func (db *DB) GetUserUsageToday(userID int64) (int, error) {
 	return db.GetUserUsageTotal(userID)
