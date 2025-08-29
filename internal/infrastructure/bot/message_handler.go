@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -226,6 +227,10 @@ func (mh *MessageHandler) isValidEmail(email string) bool {
 
 // showSubscriptionPurchaseScreen показывает экран оформления подписки
 func (mh *MessageHandler) showSubscriptionPurchaseScreen(bot *Bot, chatID int64, userID int64) {
+	// Рассчитываем дату окончания подписки (текущая дата + 1 месяц)
+	subscriptionEndDate := time.Now().AddDate(0, 1, 0)
+	formattedDate := subscriptionEndDate.Format("02.01.2006")
+
 	text := "💎 *Оформление Premium подписки*\n\n" +
 		"✨ *Преимущества Premium:*\n" +
 		"• 🚀 Неограниченное количество постов\n" +
@@ -235,7 +240,7 @@ func (mh *MessageHandler) showSubscriptionPurchaseScreen(bot *Bot, chatID int64,
 		"• 🔧 Эксклюзивные функции и шаблоны\n" +
 		"• 💬 Приоритетная техподдержка\n\n" +
 		"💰 *Стоимость:* 990₽/месяц\n" +
-		"📅 *Период:* 1 месяц\n" +
+		"📅 *Период:* 1 месяц (до " + formattedDate + ")\n" +
 		"♻️ *Автопродление:* включено\n\n" +
 		"📋 *Оферта:* [Пользовательское соглашение](#)\n\n" +
 		"Нажмите «Подтвердить покупку» для перехода к оплате:"
