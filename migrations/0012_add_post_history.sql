@@ -43,27 +43,14 @@ CREATE INDEX IF NOT EXISTS idx_post_history_is_saved ON post_history(is_saved);
 CREATE INDEX IF NOT EXISTS idx_post_history_ai_model ON post_history(ai_model);
 CREATE INDEX IF NOT EXISTS idx_post_history_voice_sent_at ON post_history(voice_sent_at);
 
--- Функция для автоматического обновления updated_at
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- Триггер для автоматического обновления updated_at
-CREATE TRIGGER update_post_history_updated_at 
-    BEFORE UPDATE ON post_history 
-    FOR EACH ROW 
-    EXECUTE FUNCTION update_updated_at_column();
+-- 
 
 -- +goose Down
-DROP TRIGGER IF EXISTS update_post_history_updated_at ON post_history;
-DROP FUNCTION IF EXISTS update_updated_at_column();
-DROP INDEX IF EXISTS idx_post_history_voice_sent_at;
-DROP INDEX IF EXISTS idx_post_history_ai_model;
-DROP INDEX IF EXISTS idx_post_history_is_saved;
-DROP INDEX IF EXISTS idx_post_history_created_at;
-DROP INDEX IF EXISTS idx_post_history_user_id;
+-- DROP TRIGGER IF EXISTS update_post_history_updated_at ON post_history;
+-- DROP FUNCTION IF EXISTS update_updated_at_column();
+-- DROP INDEX IF EXISTS idx_post_history_voice_sent_at;
+-- DROP INDEX IF EXISTS idx_post_history_ai_model;
+-- DROP INDEX IF EXISTS idx_post_history_is_saved;
+-- DROP INDEX IF EXISTS idx_post_history_created_at;
+-- DROP INDEX IF EXISTS idx_post_history_user_id;
 DROP TABLE IF EXISTS post_history;
