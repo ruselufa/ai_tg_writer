@@ -357,8 +357,12 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	}
 	allMessages := strings.Join(fragments, "\n\n")
 
-	// Генерируем готовый пост через VoiceHandler
-	postText, err := ih.voiceHandler.GenerateTelegramPost(allMessages, userID, firstHistoryID)
+	// Генерируем готовый контент через VoiceHandler
+	contentType := state.ContentType
+	if contentType == "" {
+		contentType = "telegram_post" // значение по умолчанию для обратной совместимости
+	}
+	postText, err := ih.voiceHandler.GenerateContent(contentType, allMessages, userID, firstHistoryID)
 	if err != nil {
 		log.Printf("Ошибка генерации поста: %v", err)
 		msg := tgbotapi.NewMessage(
@@ -799,8 +803,12 @@ func (ih *InlineHandler) handleEditStartCreation(bot *Bot, callback *tgbotapi.Ca
 	// Формируем запрос для ИИ с исходным текстом и правками
 	prompt := fmt.Sprintf("Исходный текст:\n%s\n\nПравки пользователя:\n%s\n\nПожалуйста, внесите изменения в исходный текст согласно правкам пользователя.", originalText, editText)
 
-	// Генерируем обновленный пост через VoiceHandler
-	updatedText, err := ih.voiceHandler.GenerateTelegramPost(prompt, userID, firstHistoryID)
+	// Генерируем обновленный контент через VoiceHandler
+	contentType := state.ContentType
+	if contentType == "" {
+		contentType = "telegram_post" // значение по умолчанию для обратной совместимости
+	}
+	updatedText, err := ih.voiceHandler.GenerateContent(contentType, prompt, userID, firstHistoryID)
 	if err != nil {
 		log.Printf("Ошибка генерации обновленного поста: %v", err)
 		msg := tgbotapi.NewMessage(

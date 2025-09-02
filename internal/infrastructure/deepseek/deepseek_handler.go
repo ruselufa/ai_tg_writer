@@ -216,32 +216,35 @@ func (dh *DeepSeekHandler) SummarizeText(text string) (string, error) {
 	return summary, nil
 }
 
-// CreateTelegramPost создает красивый пост для Telegram с хештегами
-func (dh *DeepSeekHandler) CreateTelegramPost(originalText string) (string, error) {
+// CreateContent создает контент для различных платформ на основе промптов
+func (dh *DeepSeekHandler) CreateContent(contentType string, originalText string) (string, error) {
 	if dh.apiKey == "" {
-		return "🔧 Функция создания постов временно недоступна", nil
+		return "🔧 Функция создания контента временно недоступна", nil
 	}
 
-	prompt := fmt.Sprintf(`Создай привлекательный пост для Telegram канала на основе этого текста. 
+	// Загружаем промпты из JSON файла
+	prompts, err := loadPrompts()
+	if err != nil {
+		return "", fmt.Errorf("ошибка загрузки промптов: %v", err)
+	}
 
-ВАЖНО: Отвечай ТОЛЬКО готовым постом, без вступлений типа "Конечно!", "Вот готовый пост" или заключений типа "Удачных покупок!". Клиент должен скопировать ответ и сразу опубликовать.	
+	// Получаем промпт для указанного типа контента
+	promptConfig, exists := prompts[contentType]
+	fmt.Printf(promptConfig.System)
+	if !exists {
+		return "", fmt.Errorf("неизвестный тип контента: %s", contentType)
+	}
 
-Требования к форматированию:
-- Используй *жирный* для заголовков и важных мыслей.
-- Используй _курсив_ для акцентов.
-- Для списков используй эмодзи (например, 🔹, ✔️, ▫️).
-- Между абзацами и пунктами делай пустую строку.
-- Экранируй все спецсимволы MarkdownV2: _ * [ ] ( ) ~ > # + - = | { } . !
-- В конце добавь 3-5 релевантных хештегов.
-
-Исходный текст:
-"%s"
-
-Создай красивый Telegram пост с правильной разметкой:`, originalText)
+	// Формируем промпт с подстановкой текста
+	prompt := strings.Replace(promptConfig.User, "{text}", originalText, -1)
 
 	request := DeepSeekRequest{
 		Model: "deepseek-chat",
 		Messages: []DeepSeekMessage{
+			{
+				Role:    "system",
+				Content: promptConfig.System,
+			},
 			{
 				Role:    "user",
 				Content: prompt,
@@ -260,8 +263,13 @@ func (dh *DeepSeekHandler) CreateTelegramPost(originalText string) (string, erro
 		return "", fmt.Errorf("пустой ответ от DeepSeek")
 	}
 
-	post := strings.TrimSpace(response.Choices[0].Message.Content)
-	return post, nil
+	content := strings.TrimSpace(response.Choices[0].Message.Content)
+	return content, nil
+}
+
+// CreateTelegramPost создает красивый пост для Telegram с хештегами
+func (dh *DeepSeekHandler) CreateTelegramPost(originalText string) (string, error) {
+	return dh.CreateContent("telegram_post", originalText)
 }
 
 // makeRequest выполняет HTTP запрос к DeepSeek API с retry логикой
@@ -330,4 +338,34 @@ func (dh *DeepSeekHandler) makeSingleRequest(request DeepSeekRequest) (*DeepSeek
 	}
 
 	return &response, nil
+}
+
+// PromptConfig представляет конфигурацию промпта для определенного типа контента
+type PromptConfig struct {
+	System string `json:"system"`
+	User   string `json:"user"`
+	Edit   struct {
+		System string `json:"system"`
+		User   string `json:"user"`
+	} `json:"edit"`
+}
+
+// loadPrompts загружает промпты из JSON файла
+func loadPrompts() (map[string]PromptConfig, error) {
+	// Определяем путь к файлу промптов
+	promptsPath := "internal/infrastructure/prompts/prompts.json"
+
+	// Читаем файл
+	data, err := os.ReadFile(promptsPath)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения файла промптов: %v", err)
+	}
+
+	// Парсим JSON
+	var prompts map[string]PromptConfig
+	if err := json.Unmarshal(data, &prompts); err != nil {
+		return nil, fmt.Errorf("ошибка парсинга JSON промптов: %v", err)
+	}
+
+	return prompts, nil
 }

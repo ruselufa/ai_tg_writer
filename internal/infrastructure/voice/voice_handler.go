@@ -231,8 +231,8 @@ func (vh *VoiceHandler) TranscribeVoiceFile(filePath string, userID int64, fileI
 	return transcriptionResp.Text, historyID, nil
 }
 
-// GenerateTelegramPost генерирует красивый Telegram-пост с логированием
-func (vh *VoiceHandler) GenerateTelegramPost(text string, userID int64, historyID int) (string, error) {
+// GenerateContent генерирует контент для различных платформ с логированием
+func (vh *VoiceHandler) GenerateContent(contentType string, text string, userID int64, historyID int) (string, error) {
 	aiSentAt := time.Now().UTC()
 	aiStart := time.Now().UTC()
 
@@ -246,8 +246,8 @@ func (vh *VoiceHandler) GenerateTelegramPost(text string, userID int64, historyI
 		}
 	}
 
-	// Генерируем пост
-	response, err := vh.deepseekHandler.CreateTelegramPost(text)
+	// Генерируем контент
+	response, err := vh.deepseekHandler.CreateContent(contentType, text)
 	if err != nil {
 		return "", err
 	}
@@ -296,6 +296,11 @@ func (vh *VoiceHandler) GenerateTelegramPost(text string, userID int64, historyI
 	}
 
 	return response, nil
+}
+
+// GenerateTelegramPost генерирует красивый Telegram-пост с логированием
+func (vh *VoiceHandler) GenerateTelegramPost(text string, userID int64, historyID int) (string, error) {
+	return vh.GenerateContent("telegram_post", text, userID, historyID)
 }
 
 // MarkPostAsSaved отмечает пост как сохраненный в истории
