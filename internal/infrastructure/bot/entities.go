@@ -44,12 +44,12 @@ func DefaultPostStyling() PostStyling {
 	return PostStyling{
 		UseBold:          true,
 		UseItalic:        true,
-		UseStrikethrough: false,
+		UseStrikethrough: true,
 		UseCode:          false,
 		UseLinks:         true,
-		UseHashtags:      true,
-		UseMentions:      false,
-		UseUnderline:     false,
+		UseHashtags:      false,
+		UseMentions:      true,
+		UseUnderline:     true,
 		UsePre:           false,
 	}
 }
@@ -536,7 +536,7 @@ func (tf *TelegramPostFormatter) cleanMarkdownV2(text string) string {
 // containsHTML проверяет, содержит ли текст HTML разметку
 func (tf *TelegramPostFormatter) containsHTML(text string) bool {
 	// Простая проверка на наличие HTML тегов
-	htmlPatterns := []string{"<b>", "</b>", "<i>", "</i>", "<code>", "</code>", "<pre>", "</pre>", "<strong>", "</strong>", "<em>", "</em>"}
+	htmlPatterns := []string{"<b>", "</b>", "<i>", "</i>", "<code>", "</code>", "<pre>", "</pre>", "<strong>", "</strong>", "<em>", "</em>", "<blockquote>", "</blockquote>"}
 
 	for _, pattern := range htmlPatterns {
 		if strings.Contains(text, pattern) {
@@ -552,19 +552,30 @@ func (tf *TelegramPostFormatter) ParseHTMLToEntities(text string) (string, []Mes
 	var cleanText strings.Builder
 	offset := 0
 
-	for i := 0; i < len(text); i++ {
-		if text[i] == '<' {
+	// Обрабатываем текст по рунам для корректной работы с UTF-8
+	runes := []rune(text)
+
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '<' {
 			// Находим закрывающую скобку
-			closeIndex := strings.IndexByte(text[i:], '>')
+			closeIndex := -1
+			for j := i + 1; j < len(runes); j++ {
+				if runes[j] == '>' {
+					closeIndex = j
+					break
+				}
+			}
+
 			if closeIndex == -1 {
 				// Невалидный HTML, пропускаем
-				cleanText.WriteByte(text[i])
+				cleanText.WriteRune(runes[i])
 				offset++
 				continue
 			}
-			closeIndex += i
 
-			tag := text[i+1 : closeIndex]
+			// Извлекаем тег
+			tagRunes := runes[i+1 : closeIndex]
+			tag := string(tagRunes)
 			tagName := strings.ToLower(strings.Split(tag, " ")[0])
 			tagName = strings.TrimSuffix(tagName, "/") // Handle self-closing tags
 
@@ -579,6 +590,8 @@ func (tf *TelegramPostFormatter) ParseHTMLToEntities(text string) (string, []Mes
 				entityType = "code"
 			case "pre":
 				entityType = "pre"
+			case "blockquote":
+				entityType = "blockquote"
 			case "a":
 				// Для ссылок нужно извлечь URL
 				entityType = "text_link"
@@ -592,39 +605,60 @@ func (tf *TelegramPostFormatter) ParseHTMLToEntities(text string) (string, []Mes
 			if entityType != "" {
 				// Ищем закрывающий тег
 				closingTag := "</" + tagName + ">"
-				endIndex := strings.Index(text[closeIndex+1:], closingTag)
+				closingTagRunes := []rune(closingTag)
+				endIndex := -1
+
+				for j := closeIndex + 1; j <= len(runes)-len(closingTagRunes); j++ {
+					found := true
+					for k := 0; k < len(closingTagRunes); k++ {
+						if runes[j+k] != closingTagRunes[k] {
+							found = false
+							break
+						}
+					}
+					if found {
+						endIndex = j
+						break
+					}
+				}
+
 				if endIndex == -1 {
 					// Закрывающий тег не найден, пропускаем
 					i = closeIndex
 					continue
 				}
-				endIndex += closeIndex + 1
 
 				// Содержимое между тегами
-				content := text[closeIndex+1 : endIndex]
-				contentLength := len(content)
+				contentRunes := runes[closeIndex+1 : endIndex]
+				content := string(contentRunes)
+				contentUTF16Length := tf.getUTF16Length(content)
 
 				// Добавляем entity
 				entity := MessageEntity{
 					Type:   entityType,
 					Offset: offset,
-					Length: contentLength,
+					Length: contentUTF16Length,
 				}
 				entities = append(entities, entity)
 
 				// Добавляем текст без тегов
 				cleanText.WriteString(content)
-				offset += contentLength
+				offset += contentUTF16Length
 
 				// Пропускаем закрывающий тег
-				i = endIndex + len(closingTag) - 1
+				i = endIndex + len(closingTagRunes) - 1
 			} else {
 				// Пропускаем тег
 				i = closeIndex
 			}
 		} else {
-			cleanText.WriteByte(text[i])
-			offset++
+			cleanText.WriteRune(runes[i])
+			// Считаем UTF-16 длину для каждого символа
+			if runes[i] >= 0x10000 {
+				offset += 2 // Суррогатные пары UTF-16
+			} else {
+				offset += 1 // Обычные символы
+			}
 		}
 	}
 
