@@ -140,7 +140,13 @@ func (b *Bot) CreatePostActionKeyboard() tgbotapi.InlineKeyboardMarkup {
 }
 
 // SendFormattedMessage отправляет сообщение с форматированием
+// Автоматически разбивает длинные сообщения на части
 func (b *Bot) SendFormattedMessage(chatID int64, text string, entities []MessageEntity) (int, error) {
+	// Проверяем длину текста и разбиваем на части если нужно
+	if len(text) > 3900 {
+		return b.sendSplitFormattedMessage(chatID, text, entities)
+	}
+
 	msg := tgbotapi.NewMessage(chatID, text)
 
 	// Конвертируем наши entities в формат tgbotapi
@@ -178,6 +184,10 @@ func (b *Bot) SendFormattedMessage(chatID int64, text string, entities []Message
 
 	message, err := b.Send(msg)
 	if err != nil {
+		// Если ошибка связана с длиной сообщения, пробуем разбить на части
+		if err.Error() == "Bad Request: message is too long" {
+			return b.sendSplitFormattedMessage(chatID, text, entities)
+		}
 		return 0, err
 	}
 	return message.MessageID, nil
@@ -254,6 +264,85 @@ func (b *Bot) CreateStylingSettingsKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
 		),
 	)
+}
+
+// sendSplitFormattedMessage разбивает длинное сообщение на части и отправляет их
+func (b *Bot) sendSplitFormattedMessage(chatID int64, text string, entities []MessageEntity) (int, error) {
+	// Разбиваем текст на части по 3800 символов (меньше лимита Telegram в 4096)
+	parts := splitText(text, 3800)
+	var lastMessageID int
+
+	for i, part := range parts {
+		// Создаем сообщение для части текста
+		msg := tgbotapi.NewMessage(chatID, part)
+
+		// Отправляем без форматирования для разбитых сообщений
+		message, err := b.Send(msg)
+		if err != nil {
+			return 0, err
+		}
+
+		// Сохраняем ID последнего сообщения
+		lastMessageID = message.MessageID
+
+		// Если это не последняя часть, добавляем индикатор продолжения
+		if i < len(parts)-1 {
+			continueMsg := tgbotapi.NewMessage(chatID, "⏩ Продолжение следует...")
+			_, err := b.Send(continueMsg)
+			if err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return lastMessageID, nil
+}
+
+// splitText разбивает текст на части указанного размера
+func splitText(text string, maxLength int) []string {
+	var parts []string
+	runes := []rune(text)
+
+	for len(runes) > 0 {
+		if len(runes) <= maxLength {
+			parts = append(parts, string(runes))
+			break
+		}
+
+		// Ищем место для разбивки (предпочтительно по абзацам)
+		splitIndex := findSplitIndex(runes, maxLength)
+		parts = append(parts, string(runes[:splitIndex]))
+		runes = runes[splitIndex:]
+	}
+
+	return parts
+}
+
+// findSplitIndex находит оптимальное место для разбивки текста
+func findSplitIndex(runes []rune, maxLength int) int {
+	if len(runes) <= maxLength {
+		return len(runes)
+	}
+
+	// Пытаемся найти конец абзаца
+	for i := maxLength; i > maxLength-100 && i > 0; i-- {
+		if runes[i] == '\n' && (i+1 >= len(runes) || runes[i+1] == '\n') {
+			return i + 1
+		}
+	}
+
+	// Пытаемся найти конец предложения
+	for i := maxLength; i > maxLength-50 && i > 0; i-- {
+		if runes[i] == '.' || runes[i] == '!' || runes[i] == '?' {
+			if i+1 < len(runes) && runes[i+1] == ' ' {
+				return i + 2
+			}
+			return i + 1
+		}
+	}
+
+	// Если не нашли хорошее место, разбиваем по максимальной длине
+	return maxLength
 }
 
 // CreateSubscriptionLink создает ссылку на оплату подписки
