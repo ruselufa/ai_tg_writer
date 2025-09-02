@@ -67,28 +67,50 @@ func NewTelegramPostFormatter(styling PostStyling) *TelegramPostFormatter {
 }
 
 // FormatPost форматирует пост с учетом настроек стилизации
+// Поддерживает как MarkdownV2, так и HTML входные форматы
 func (tf *TelegramPostFormatter) FormatPost(text string) (string, []MessageEntity) {
-	// Очищаем MarkdownV2 разметку перед парсингом
-	cleanMarkdownText := tf.cleanMarkdownV2(text)
+	// Проверяем, содержит ли текст HTML разметку
+	if tf.containsHTML(text) {
+		// Обрабатываем HTML разметку
+		cleanText, entities := tf.ParseHTMLToEntities(text)
 
-	// Парсим entities из очищенного текста
-	cleanText, entities := tf.ParseMarkdownToEntities(cleanMarkdownText)
+		// Отладочная информация
+		fmt.Printf("Форматирование HTML поста:\n")
+		fmt.Printf("Исходный текст: %s\n", text[:min(100, len(text))])
+		fmt.Printf("Очищенный текст: %s\n", cleanText[:min(100, len(cleanText))])
+		fmt.Printf("Найдено entities: %d\n", len(entities))
 
-	// Отладочная информация
-	fmt.Printf("Форматирование поста:\n")
-	fmt.Printf("Исходный текст: %s\n", text[:min(100, len(text))])
-	fmt.Printf("После очистки MarkdownV2: %s\n", cleanMarkdownText[:min(100, len(cleanMarkdownText))])
-	fmt.Printf("Очищенный текст: %s\n", cleanText[:min(100, len(cleanText))])
-	fmt.Printf("Найдено entities: %d\n", len(entities))
+		// Валидируем entities
+		if err := tf.validateEntities(cleanText, entities); err != nil {
+			fmt.Printf("Ошибка валидации HTML entities: %v\n", err)
+			// Если есть ошибки, возвращаем очищенный текст без entities
+			return cleanText, []MessageEntity{}
+		}
 
-	// Валидируем entities
-	if err := tf.validateEntities(cleanText, entities); err != nil {
-		fmt.Printf("Ошибка валидации entities: %v\n", err)
-		// Если есть ошибки, возвращаем исходный текст без entities
-		return text, []MessageEntity{}
+		return cleanText, entities
+	} else {
+		// Обрабатываем MarkdownV2 разметку (старый формат)
+		cleanMarkdownText := tf.cleanMarkdownV2(text)
+
+		// Парсим entities из очищенного текста
+		cleanText, entities := tf.ParseMarkdownToEntities(cleanMarkdownText)
+
+		// Отладочная информация
+		fmt.Printf("Форматирование Markdown поста:\n")
+		fmt.Printf("Исходный текст: %s\n", text[:min(100, len(text))])
+		fmt.Printf("После очистки MarkdownV2: %s\n", cleanMarkdownText[:min(100, len(cleanMarkdownText))])
+		fmt.Printf("Очищенный текст: %s\n", cleanText[:min(100, len(cleanText))])
+		fmt.Printf("Найдено entities: %d\n", len(entities))
+
+		// Валидируем entities
+		if err := tf.validateEntities(cleanText, entities); err != nil {
+			fmt.Printf("Ошибка валидации entities: %v\n", err)
+			// Если есть ошибки, возвращаем исходный текст без entities
+			return text, []MessageEntity{}
+		}
+
+		return cleanText, entities
 	}
-
-	return cleanText, entities
 }
 
 func min(a, b int) int {
@@ -509,4 +531,102 @@ func (tf *TelegramPostFormatter) cleanMarkdownV2(text string) string {
 
 	result = strings.Join(finalLines, "\n")
 	return strings.TrimSpace(result)
+}
+
+// containsHTML проверяет, содержит ли текст HTML разметку
+func (tf *TelegramPostFormatter) containsHTML(text string) bool {
+	// Простая проверка на наличие HTML тегов
+	htmlPatterns := []string{"<b>", "</b>", "<i>", "</i>", "<code>", "</code>", "<pre>", "</pre>", "<strong>", "</strong>", "<em>", "</em>"}
+
+	for _, pattern := range htmlPatterns {
+		if strings.Contains(text, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// ParseHTMLToEntities парсит HTML разметку в Telegram entities
+func (tf *TelegramPostFormatter) ParseHTMLToEntities(text string) (string, []MessageEntity) {
+	var entities []MessageEntity
+	var cleanText strings.Builder
+	offset := 0
+
+	for i := 0; i < len(text); i++ {
+		if text[i] == '<' {
+			// Находим закрывающую скобку
+			closeIndex := strings.IndexByte(text[i:], '>')
+			if closeIndex == -1 {
+				// Невалидный HTML, пропускаем
+				cleanText.WriteByte(text[i])
+				offset++
+				continue
+			}
+			closeIndex += i
+
+			tag := text[i+1 : closeIndex]
+			tagName := strings.ToLower(strings.Split(tag, " ")[0])
+			tagName = strings.TrimSuffix(tagName, "/") // Handle self-closing tags
+
+			// Определяем тип entity на основе тега
+			var entityType string
+			switch tagName {
+			case "b", "strong":
+				entityType = "bold"
+			case "i", "em":
+				entityType = "italic"
+			case "code":
+				entityType = "code"
+			case "pre":
+				entityType = "pre"
+			case "a":
+				// Для ссылок нужно извлечь URL
+				entityType = "text_link"
+				// Пропускаем обработку ссылок для простоты
+			default:
+				// Неподдерживаемый тег, пропускаем
+				i = closeIndex
+				continue
+			}
+
+			if entityType != "" {
+				// Ищем закрывающий тег
+				closingTag := "</" + tagName + ">"
+				endIndex := strings.Index(text[closeIndex+1:], closingTag)
+				if endIndex == -1 {
+					// Закрывающий тег не найден, пропускаем
+					i = closeIndex
+					continue
+				}
+				endIndex += closeIndex + 1
+
+				// Содержимое между тегами
+				content := text[closeIndex+1 : endIndex]
+				contentLength := len(content)
+
+				// Добавляем entity
+				entity := MessageEntity{
+					Type:   entityType,
+					Offset: offset,
+					Length: contentLength,
+				}
+				entities = append(entities, entity)
+
+				// Добавляем текст без тегов
+				cleanText.WriteString(content)
+				offset += contentLength
+
+				// Пропускаем закрывающий тег
+				i = endIndex + len(closingTag) - 1
+			} else {
+				// Пропускаем тег
+				i = closeIndex
+			}
+		} else {
+			cleanText.WriteByte(text[i])
+			offset++
+		}
+	}
+
+	return cleanText.String(), entities
 }

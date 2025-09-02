@@ -345,6 +345,14 @@ func findSplitIndex(runes []rune, maxLength int) int {
 	return maxLength
 }
 
+// SendHTMLMessage отправляет сообщение с HTML разметкой, конвертируя ее в Telegram Entities
+func (b *Bot) SendHTMLMessage(chatID int64, htmlText string) (int, error) {
+	// Создаем форматтер с настройками по умолчанию
+	formatter := NewTelegramPostFormatter(DefaultPostStyling())
+	cleanText, entities := formatter.ParseHTMLToEntities(htmlText)
+	return b.SendFormattedMessage(chatID, cleanText, entities)
+}
+
 // CreateSubscriptionLink создает ссылку на оплату подписки
 func (b *Bot) CreateSubscriptionLink(userID int64, tariff string, amount float64) (string, error) {
 	if b.SubscriptionService == nil {
