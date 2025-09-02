@@ -59,6 +59,12 @@ func (mh *MessageHandler) HandleMessage(bot *Bot, message *tgbotapi.Message) boo
 		return true // сообщение обработано
 	}
 
+	// Проверяем, ожидаем ли текст поста для рерайта
+	if state.WaitingForPostText && message.Text != "" {
+		mh.handlePostTextForRewrite(bot, message)
+		return true // сообщение обработано
+	}
+
 	// Проверяем, ожидаем ли голосовое сообщение
 	if !state.WaitingForVoice {
 		return false // сообщение не обработано
@@ -223,6 +229,28 @@ func (mh *MessageHandler) isValidEmail(email string) bool {
 	// Простая, но достаточная регулярка для email
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(email)
+}
+
+// handlePostTextForRewrite обрабатывает текст поста для рерайта
+func (mh *MessageHandler) handlePostTextForRewrite(bot *Bot, message *tgbotapi.Message) {
+	userID := message.From.ID
+
+	// Сохраняем текст поста
+	postText := strings.TrimSpace(message.Text)
+	if postText == "" {
+		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "❌ Текст поста не может быть пустым. Попробуйте еще раз."))
+		return
+	}
+
+	// Сохраняем текст поста в состоянии
+	mh.stateManager.SetRewritingPost(userID, postText)
+	mh.stateManager.SetWaitingForPostText(userID, false)
+
+	// Показываем кнопки выбора действия
+	keyboard := bot.CreateRewriteActionKeyboard()
+	msg := tgbotapi.NewMessage(message.Chat.ID, "✅ Пост принят! Выберите, как хотите его переписать:")
+	msg.ReplyMarkup = &keyboard
+	bot.Send(msg)
 }
 
 // showSubscriptionPurchaseScreen показывает экран оформления подписки

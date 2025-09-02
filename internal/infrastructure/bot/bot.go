@@ -95,6 +95,9 @@ func (b *Bot) CreateMainKeyboard() tgbotapi.InlineKeyboardMarkup {
 			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Сделать рерайт поста", "rewrite_post_start"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 			tgbotapi.NewInlineKeyboardButtonData("💎 Моя подписка", "subscription"),
 		),
@@ -135,6 +138,21 @@ func (b *Bot) CreatePostActionKeyboard() tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", "edit_post"),
 			tgbotapi.NewInlineKeyboardButtonData("✅ Сохранить", "save_post"),
+		),
+	)
+}
+
+// CreateRewriteActionKeyboard создает клавиатуру для выбора действия рерайта
+func (b *Bot) CreateRewriteActionKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Переписать как видит бот", "rewrite_post_direct"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎤 Дать указания голосовым", "rewrite_post_voice"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🏠 Главное меню", "main_menu"),
 		),
 	)
 }

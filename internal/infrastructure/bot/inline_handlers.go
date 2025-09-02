@@ -114,6 +114,12 @@ func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQue
 		ih.handleStylingSettings(bot, callback)
 	case "test_formatting":
 		ih.handleTestFormatting(bot, callback)
+	case "rewrite_post_start":
+		ih.handleRewritePostStart(bot, callback)
+	case "rewrite_post_direct":
+		ih.handleRewritePostDirect(bot, callback)
+	case "rewrite_post_voice":
+		ih.handleRewritePostVoice(bot, callback)
 	case "no_action":
 		// Игнорируем нажатие на пробел-заглушку
 		return
@@ -357,12 +363,33 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 	}
 	allMessages := strings.Join(fragments, "\n\n")
 
-	// Генерируем готовый контент через VoiceHandler
+	// Определяем тип контента в зависимости от режима
 	contentType := state.ContentType
 	if contentType == "" {
 		contentType = "telegram_post" // значение по умолчанию для обратной совместимости
 	}
-	postText, err := ih.voiceHandler.GenerateContent(contentType, allMessages, userID, firstHistoryID)
+
+	// Если это режим рерайта с голосовыми указаниями, используем специальную логику
+	var postText string
+	var err error
+	if state.RewriteMode == "voice" {
+		// Получаем исходный текст поста
+		originalText := ih.stateManager.GetRewritingPost(userID)
+		if originalText == "" {
+			msg := tgbotapi.NewMessage(
+				callback.Message.Chat.ID,
+				"❌ Ошибка: исходный текст поста не найден.",
+			)
+			bot.Send(msg)
+			return
+		}
+
+		// Используем промпт для рерайта с указаниями
+		postText, err = ih.voiceHandler.GenerateContent("rewrite_post", fmt.Sprintf("Исходный пост:\n%s\n\nУказания по рерайту:\n%s", originalText, allMessages), userID, firstHistoryID)
+	} else {
+		// Обычная генерация контента
+		postText, err = ih.voiceHandler.GenerateContent(contentType, allMessages, userID, firstHistoryID)
+	}
 	if err != nil {
 		log.Printf("Ошибка генерации поста: %v", err)
 		msg := tgbotapi.NewMessage(
@@ -390,9 +417,22 @@ func (ih *InlineHandler) handleStartCreation(bot *Bot, callback *tgbotapi.Callba
 		HistoryID:   firstHistoryID,
 	}
 
+	// Если это режим рерайта, добавляем исходный текст в сообщения
+	if state.RewriteMode == "voice" {
+		originalText := ih.stateManager.GetRewritingPost(userID)
+		if originalText != "" {
+			post.Messages = append([]string{originalText}, post.Messages...)
+		}
+	}
+
 	// Сохраняем пост
 	ih.stateManager.SetCurrentPost(userID, &post)
 	ih.stateManager.SetApprovalStatus(userID, "pending")
+
+	// Очищаем состояние рерайта после успешного создания поста
+	if state.RewriteMode != "" {
+		ih.stateManager.ClearRewriteState(userID)
+	}
 
 	// Отправляем результат с кнопками согласования
 	keyboard := bot.CreateApprovalKeyboard()
@@ -1970,4 +2010,137 @@ func (ih *InlineHandler) incrementUsageIfNeeded(userID int64) {
 	if err != nil {
 		log.Printf("Ошибка увеличения счетчика: %v", err)
 	}
+}
+
+// handleRewritePostStart обрабатывает начало процесса рерайта поста
+func (ih *InlineHandler) handleRewritePostStart(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Устанавливаем состояние ожидания текста поста
+	ih.stateManager.SetWaitingForPostText(userID, true)
+	ih.stateManager.UpdateStep(userID, "waiting_for_post_text")
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"📝 Отправьте или перешлите пост, который хотите переписать:\n\n"+
+			"Просто скопируйте текст поста и отправьте его в чат, или перешлите сообщение с постом.",
+	)
+
+	bot.Send(msg)
+}
+
+// handleRewritePostDirect обрабатывает прямой рерайт поста без дополнительных указаний
+func (ih *InlineHandler) handleRewritePostDirect(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+	state := ih.stateManager.GetState(userID)
+
+	// Получаем текст поста для рерайта
+	originalText := ih.stateManager.GetRewritingPost(userID)
+	if originalText == "" {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка: текст поста не найден. Попробуйте начать заново.",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Устанавливаем режим рерайта
+	ih.stateManager.SetRewriteMode(userID, "direct")
+
+	// Отправляем сообщение о начале обработки
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"⏳ Переписываю пост...",
+	)
+	bot.Send(msg)
+
+	// Выполняем рерайт через DeepSeek
+	rewrittenText, err := ih.voiceHandler.GenerateContent("rewrite_post", originalText, userID, 0)
+	if err != nil {
+		log.Printf("Ошибка рерайта поста: %v", err)
+		msg := tgbotapi.NewMessage(
+			callback.Message.Chat.ID,
+			"❌ Не удалось переписать пост. Попробуйте еще раз.",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Форматируем результат
+	formatter := NewTelegramPostFormatter(state.PostStyling)
+	cleanText, entities := formatter.FormatPost(rewrittenText)
+
+	// Создаем пост
+	post := Post{
+		ContentType: "telegram_post",
+		Content:     cleanText,
+		Messages:    []string{originalText},
+		Entities:    entities,
+		Styling:     state.PostStyling,
+	}
+
+	// Сохраняем пост
+	ih.stateManager.SetCurrentPost(userID, &post)
+	ih.stateManager.SetApprovalStatus(userID, "pending")
+
+	// Отправляем результат с кнопками согласования
+	keyboard := bot.CreateApprovalKeyboard()
+	messageID, err := bot.SendFormattedMessageWithKeyboard(
+		callback.Message.Chat.ID,
+		cleanText,
+		entities,
+		keyboard,
+	)
+	if err != nil {
+		log.Printf("Ошибка отправки форматированного сообщения: %v", err)
+		// Отправляем без форматирования в случае ошибки
+		resultMsg := tgbotapi.NewMessage(callback.Message.Chat.ID, cleanText)
+		resultMsg.ReplyMarkup = keyboard
+		bot.Send(resultMsg)
+	} else {
+		// Сохраняем ID сообщения с готовым постом
+		ih.stateManager.SetPostMessageID(userID, messageID)
+		log.Printf("Сохранили ID сообщения с рерайтом: %d", messageID)
+	}
+
+	// Очищаем состояние рерайта
+	ih.stateManager.ClearRewriteState(userID)
+}
+
+// handleRewritePostVoice обрабатывает рерайт поста с голосовыми указаниями
+func (ih *InlineHandler) handleRewritePostVoice(bot *Bot, callback *tgbotapi.CallbackQuery) {
+	userID := callback.From.ID
+
+	// Получаем текст поста для рерайта
+	originalText := ih.stateManager.GetRewritingPost(userID)
+	if originalText == "" {
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"❌ Ошибка: текст поста не найден. Попробуйте начать заново.",
+		)
+		bot.Send(msg)
+		return
+	}
+
+	// Устанавливаем режим рерайта и состояние ожидания голосовых сообщений
+	ih.stateManager.SetRewriteMode(userID, "voice")
+	ih.stateManager.UpdateStep(userID, "waiting_for_voice")
+	ih.stateManager.SetWaitingForVoice(userID, true)
+	ih.stateManager.ClearVoiceMessages(userID)
+	ih.stateManager.ClearPendingVoices(userID)
+
+	msg := tgbotapi.NewEditMessageText(
+		callback.Message.Chat.ID,
+		callback.Message.MessageID,
+		"🎤 Отправьте голосовые сообщения с указаниями, как переписать пост:\n\n"+
+			"Исходный пост:\n"+originalText+"\n\n"+
+			"Говорите, что именно нужно изменить, добавить или убрать.",
+	)
+
+	bot.Send(msg)
 }

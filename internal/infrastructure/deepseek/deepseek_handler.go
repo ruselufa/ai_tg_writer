@@ -93,41 +93,8 @@ func (dh *DeepSeekHandler) RewriteText(originalText string) (string, error) {
 		return "🔧 Функция переписывания текста временно недоступна", nil
 	}
 
-	prompt := fmt.Sprintf(`Сделай из этого текста красивый пост для Telegram-канала с использованием MarkdownV2:
-- Используй *жирный* для заголовков и важных мыслей.
-- Используй _курсив_ для акцентов.
-- Для списков используй эмодзи (например, 🔹, ✔️, ▫️).
-- Между абзацами и пунктами делай пустую строку.
-- Экранируй все спецсимволы MarkdownV2: _ * [ ] ( ) ~ > # + - = | { } . !
-
-Исходный текст:
-\"%s\"
-
-Сделай красивый Telegram-пост с правильной разметкой:`, originalText)
-
-	request := DeepSeekRequest{
-		Model: "deepseek-chat",
-		Messages: []DeepSeekMessage{
-			{
-				Role:    "user",
-				Content: prompt,
-			},
-		},
-		Temperature: 0.7,
-		MaxTokens:   2000,
-	}
-
-	response, err := dh.makeRequest(request)
-	if err != nil {
-		return "", fmt.Errorf("ошибка DeepSeek API: %v", err)
-	}
-
-	if len(response.Choices) == 0 {
-		return "", fmt.Errorf("пустой ответ от DeepSeek")
-	}
-
-	rewrittenText := strings.TrimSpace(response.Choices[0].Message.Content)
-	return rewrittenText, nil
+	// Используем промпт для рерайта из prompts.json
+	return dh.CreateContent("rewrite_post", originalText)
 }
 
 // ImproveText улучшает качество текста

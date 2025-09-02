@@ -37,6 +37,10 @@ type UserState struct {
 	WaitingForEmail   bool                           // ожидаем ввод email
 	ReferralCode      string                         // реферальный код пользователя
 	ReferredBy        *int64                         // ID пользователя, который пригласил
+	// Поля для рерайта постов
+	WaitingForPostText bool   // ожидание текста поста для рерайта
+	RewritingPost      string // исходный текст поста для рерайта
+	RewriteMode        string // режим рерайта ("direct" или "voice")
 }
 
 type VoiceTranscription struct {
@@ -294,11 +298,11 @@ func (sm *StateManager) ClearEditMessages(userID int64) {
 func (sm *StateManager) AddPendingEdit(userID int64, messageID int, fileID string, duration int, fileSize int) {
 	state := sm.GetState(userID)
 	state.PendingEdits[fileID] = &VoiceTranscription{
-		MessageID:   messageID,
-		FileID:      fileID,
-		Status:      "pending",
-		Duration:    duration,
-		FileSize:    fileSize,
+		MessageID: messageID,
+		FileID:    fileID,
+		Status:    "pending",
+		Duration:  duration,
+		FileSize:  fileSize,
 	}
 }
 
@@ -412,4 +416,42 @@ func (sm *StateManager) GetPostHistoryID(userID int64) int {
 		return state.CurrentPost.HistoryID
 	}
 	return 0
+}
+
+// SetWaitingForPostText устанавливает флаг ожидания текста поста для рерайта
+func (sm *StateManager) SetWaitingForPostText(userID int64, waiting bool) {
+	state := sm.GetState(userID)
+	state.WaitingForPostText = waiting
+}
+
+// SetRewritingPost устанавливает текст поста для рерайта
+func (sm *StateManager) SetRewritingPost(userID int64, text string) {
+	state := sm.GetState(userID)
+	state.RewritingPost = text
+}
+
+// GetRewritingPost возвращает текст поста для рерайта
+func (sm *StateManager) GetRewritingPost(userID int64) string {
+	state := sm.GetState(userID)
+	return state.RewritingPost
+}
+
+// SetRewriteMode устанавливает режим рерайта
+func (sm *StateManager) SetRewriteMode(userID int64, mode string) {
+	state := sm.GetState(userID)
+	state.RewriteMode = mode
+}
+
+// GetRewriteMode возвращает режим рерайта
+func (sm *StateManager) GetRewriteMode(userID int64) string {
+	state := sm.GetState(userID)
+	return state.RewriteMode
+}
+
+// ClearRewriteState очищает состояние рерайта
+func (sm *StateManager) ClearRewriteState(userID int64) {
+	state := sm.GetState(userID)
+	state.WaitingForPostText = false
+	state.RewritingPost = ""
+	state.RewriteMode = ""
 }
