@@ -1004,6 +1004,9 @@ func (ih *InlineHandler) handleHelp(bot *Bot, callback *tgbotapi.CallbackQuery) 
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("💬 Написать в поддержку", "https://t.me/socialflow_support_bot"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔙 Назад в меню", "main_menu"),
 		),
 	)
@@ -1719,8 +1722,12 @@ func (ih *InlineHandler) handlePostHistory(bot *Bot, callback *tgbotapi.Callback
 		messageText = fmt.Sprintf("📚 История постов (страница %d)\n\n", page)
 		for i, post := range posts {
 			postNumber := offset + i + 1
-			// Безопасно обрезаем AI ответ до 30 символов с проверкой UTF-8
-			shortText := post.AIResponse
+			// Очищаем HTML теги из текста поста
+			formatter := NewTelegramPostFormatter(DefaultPostStyling())
+			cleanText, _ := formatter.ParseHTMLToEntities(post.AIResponse)
+
+			// Безопасно обрезаем очищенный текст до 30 символов с проверкой UTF-8
+			shortText := cleanText
 			if len(shortText) > 30 {
 				// Проверяем, что обрезание не нарушает UTF-8
 				runes := []rune(shortText)
