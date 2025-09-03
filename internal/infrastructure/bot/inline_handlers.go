@@ -557,6 +557,8 @@ func (ih *InlineHandler) handleMainMenu(bot *Bot, callback *tgbotapi.CallbackQue
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📝 Создать пост/сценарий", "create_post")),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Сделать рерайт поста", "rewrite_post_start")),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("👤 Мой профиль", "profile"),
 			tgbotapi.NewInlineKeyboardButtonData(subLabel, "subscription")),
 		tgbotapi.NewInlineKeyboardRow(
@@ -1294,7 +1296,7 @@ func (ih *InlineHandler) handleBuyPremium(bot *Bot, callback *tgbotapi.CallbackQ
 		"💰 *Стоимость:* 990₽/месяц\n" +
 		"📅 *Период:* 1 месяц (до " + formattedDate + ")\n" +
 		"♻️ *Автопродление:* включено\n\n" +
-		"📋 *Оферта:* [Пользовательское соглашение](#)\n\n" +
+		// "📋 *Оферта:* [Пользовательское соглашение](#)\n\n" +
 		"Нажмите «Подтвердить покупку» для перехода к оплате:"
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -1831,8 +1833,15 @@ func (ih *InlineHandler) handleViewPost(bot *Bot, callback *tgbotapi.CallbackQue
 
 	post := posts[positionOnPage]
 
-	// Формируем текст поста
-	messageText := fmt.Sprintf("📚 Пост #%d\n\n%s", postNumber, post.AIResponse)
+	// Формируем заголовок поста
+	headerText := fmt.Sprintf("📚 Пост #%d\n\n", postNumber)
+
+	// Обрабатываем HTML разметку в тексте поста
+	formatter := NewTelegramPostFormatter(DefaultPostStyling())
+	cleanText, entities := formatter.ParseHTMLToEntities(post.AIResponse)
+
+	// Объединяем заголовок с очищенным текстом
+	fullText := headerText + cleanText
 
 	// Создаем клавиатуру с кнопкой назад
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -1841,9 +1850,24 @@ func (ih *InlineHandler) handleViewPost(bot *Bot, callback *tgbotapi.CallbackQue
 		),
 	)
 
-	msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, messageText)
-	msg.ReplyMarkup = &keyboard
-	bot.Send(msg)
+	// Отправляем с форматированием
+	_, err = bot.SendFormattedMessageWithKeyboard(
+		callback.Message.Chat.ID,
+		fullText,
+		entities,
+		keyboard,
+	)
+	if err != nil {
+		log.Printf("Ошибка отправки форматированного сообщения: %v", err)
+		// Отправляем без форматирования в случае ошибки
+		msg := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, headerText+post.AIResponse)
+		msg.ReplyMarkup = &keyboard
+		bot.Send(msg)
+	} else {
+		// Удаляем старое сообщение, так как отправили новое
+		deleteMsg := tgbotapi.NewDeleteMessage(callback.Message.Chat.ID, callback.Message.MessageID)
+		bot.Send(deleteMsg)
+	}
 }
 
 // handlePaymentHistory обрабатывает просмотр истории оплат пользователя
@@ -2016,18 +2040,61 @@ func (ih *InlineHandler) incrementUsageIfNeeded(userID int64) {
 func (ih *InlineHandler) handleRewritePostStart(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	userID := callback.From.ID
 
-	// Устанавливаем состояние ожидания текста поста
-	ih.stateManager.SetWaitingForPostText(userID, true)
-	ih.stateManager.UpdateStep(userID, "waiting_for_post_text")
+	// Проверяем подписку пользователя (так же как в handleCreatePost)
+	subscriptionStatus, canCreate, remainingFree, err := ih.checkUserSubscriptionStatus(userID)
+	if err != nil {
+		log.Printf("Ошибка проверки подписки для рерайта: %v", err)
+		// В случае ошибки разрешаем создание
+		subscriptionStatus = "error"
+		canCreate = true
+	}
 
-	msg := tgbotapi.NewEditMessageText(
-		callback.Message.Chat.ID,
-		callback.Message.MessageID,
-		"📝 Отправьте или перешлите пост, который хотите переписать:\n\n"+
-			"Просто скопируйте текст поста и отправьте его в чат, или перешлите сообщение с постом.",
-	)
+	if canCreate {
+		// Устанавливаем состояние ожидания текста поста
+		ih.stateManager.SetWaitingForPostText(userID, true)
+		ih.stateManager.UpdateStep(userID, "waiting_for_post_text")
 
-	bot.Send(msg)
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			"📝 Отправьте или перешлите пост, который хотите переписать:\n\n"+
+				"Просто скопируйте текст поста и отправьте его в чат, или перешлите сообщение с постом.",
+		)
+
+		bot.Send(msg)
+	} else {
+		// Показываем информацию о подписке и предлагаем оформить
+		keyboard := ih.createSubscriptionKeyboard(userID, subscriptionStatus, remainingFree)
+
+		var messageText string
+		switch subscriptionStatus {
+		case "cancelled":
+			messageText = "❌ Ваша подписка была отменена.\n\n"
+		case "expired":
+			messageText = "⏰ Срок действия подписки истек.\n\n"
+		case "no_subscription":
+			messageText = "💎 У вас нет активной подписки.\n\n"
+		default:
+			messageText = "💎 Требуется подписка для создания контента.\n\n"
+		}
+
+		if remainingFree > 0 {
+			messageText += fmt.Sprintf("🎁 У вас осталось %d бесплатных созданий в этом месяце.\n\n", remainingFree)
+		} else {
+			messageText += "🎁 Бесплатные создания на этот месяц закончились.\n\n"
+		}
+
+		messageText += "💳 Оформите подписку для неограниченного создания контента!"
+
+		msg := tgbotapi.NewEditMessageText(
+			callback.Message.Chat.ID,
+			callback.Message.MessageID,
+			messageText,
+		)
+		msg.ReplyMarkup = &keyboard
+
+		bot.Send(msg)
+	}
 }
 
 // handleRewritePostDirect обрабатывает прямой рерайт поста без дополнительных указаний

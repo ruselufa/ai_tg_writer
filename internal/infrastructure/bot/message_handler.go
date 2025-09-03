@@ -60,7 +60,7 @@ func (mh *MessageHandler) HandleMessage(bot *Bot, message *tgbotapi.Message) boo
 	}
 
 	// Проверяем, ожидаем ли текст поста для рерайта
-	if state.WaitingForPostText && message.Text != "" {
+	if state.WaitingForPostText && (message.Text != "" || message.Caption != "") {
 		mh.handlePostTextForRewrite(bot, message)
 		return true // сообщение обработано
 	}
@@ -235,8 +235,14 @@ func (mh *MessageHandler) isValidEmail(email string) bool {
 func (mh *MessageHandler) handlePostTextForRewrite(bot *Bot, message *tgbotapi.Message) {
 	userID := message.From.ID
 
-	// Сохраняем текст поста
-	postText := strings.TrimSpace(message.Text)
+	// Извлекаем текст поста из сообщения или подписи к медиафайлу
+	var postText string
+	if message.Text != "" {
+		postText = strings.TrimSpace(message.Text)
+	} else if message.Caption != "" {
+		postText = strings.TrimSpace(message.Caption)
+	}
+
 	if postText == "" {
 		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "❌ Текст поста не может быть пустым. Попробуйте еще раз."))
 		return
@@ -270,7 +276,7 @@ func (mh *MessageHandler) showSubscriptionPurchaseScreen(bot *Bot, chatID int64,
 		"💰 *Стоимость:* 990₽/месяц\n" +
 		"📅 *Период:* 1 месяц (до " + formattedDate + ")\n" +
 		"♻️ *Автопродление:* включено\n\n" +
-		"📋 *Оферта:* [Пользовательское соглашение](#)\n\n" +
+		// "📋 *Оферта:* [Пользовательское соглашение](#)\n\n" +
 		"Нажмите «Подтвердить покупку» для перехода к оплате:"
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
