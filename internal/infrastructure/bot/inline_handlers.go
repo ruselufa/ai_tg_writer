@@ -1329,7 +1329,7 @@ func (ih *InlineHandler) handleConfirmPurchase(bot *Bot, callback *tgbotapi.Call
 	userID := callback.From.ID
 
 	// Создаем ссылку на оплату подписки
-	paymentURL, err := bot.CreateSubscriptionLink(userID, "premium", 990.0)
+	paymentURL, err := bot.CreateSubscriptionLink(userID, "premium", 1.0)
 	if err != nil {
 		msg := tgbotapi.NewEditMessageText(
 			callback.Message.Chat.ID,

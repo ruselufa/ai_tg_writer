@@ -8,7 +8,7 @@ rule_files:
 scrape_configs:
   - job_name: 'ai_tg_writer'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['172.17.0.1:8080']
     metrics_path: '/metrics'
     scrape_interval: 5s
 

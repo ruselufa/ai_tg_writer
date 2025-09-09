@@ -105,6 +105,24 @@ func (c *Client) CreateInitialPayment(idemKey string, amount Amount, description
 			"id": customerID, // обязателен для привязки
 		},
 		"metadata": metadata,
+		"receipt": map[string]any{
+			"customer": map[string]string{
+				"email": "noreply@aiwhisper.ru",
+			},
+			"items": []map[string]any{
+				{
+					"description": description,
+					"amount": map[string]string{
+						"value":    amount.Value,
+						"currency": amount.Currency,
+					},
+					"vat_code":        "1", // НДС 20%
+					"quantity":        "1",
+					"payment_subject": "service",      // Предмет расчета - услуга
+					"payment_mode":    "full_payment", // Способ расчета - полный расчет
+				},
+			},
+		},
 	}
 	var out map[string]any
 	err := c.do(idemKey, "POST", "/payments", payload, &out)
