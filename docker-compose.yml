@@ -43,6 +43,7 @@ services:
       - '--web.enable-lifecycle'
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
     networks:
       - ai_tg_writer_network
 
@@ -68,6 +69,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
       - ./monitoring/grafana/conf/grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
     networks:
       - ai_tg_writer_network
 
@@ -80,6 +82,7 @@ services:
       - "14268:14268"
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
     networks:
       - ai_tg_writer_network
 
@@ -98,6 +101,7 @@ services:
       - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
     networks:
       - ai_tg_writer_network
 
@@ -109,6 +113,7 @@ services:
       - "9187:9187"
     environment:
       - DATA_SOURCE_NAME=postgresql://postgres:${DB_PASSWORD}@postgres:5432/ai_tg_writer?sslmode=disable
+    restart: unless-stopped
     networks:
       - ai_tg_writer_network
     depends_on:
