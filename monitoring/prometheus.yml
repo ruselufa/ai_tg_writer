@@ -8,7 +8,7 @@ rule_files:
 scrape_configs:
   - job_name: 'ai_tg_writer'
     static_configs:
-      - targets: ['172.17.0.1:8080']
+      - targets: ['app:8080'] # Go приложение в контейнере
     metrics_path: '/metrics'
     scrape_interval: 5s
 
