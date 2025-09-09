@@ -19,8 +19,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/ai_tg_wr
 # Финальный образ
 FROM alpine:latest
 
-# Устанавливаем ca-certificates для HTTPS запросов
-RUN apk --no-cache add ca-certificates
+# Устанавливаем ca-certificates для HTTPS запросов и ffmpeg для конвертации аудио
+RUN apk --no-cache add ca-certificates ffmpeg
 
 # Создаем пользователя для безопасности
 RUN adduser -D -s /bin/sh appuser
@@ -34,6 +34,7 @@ COPY --from=builder /app/main .
 # Копируем необходимые файлы
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/monitoring ./monitoring
+COPY --from=builder /app/internal ./internal
 
 # Создаем папку для аудио
 RUN mkdir -p audio && chown appuser:appuser audio

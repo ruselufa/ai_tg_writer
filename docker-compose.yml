@@ -125,18 +125,11 @@ services:
     container_name: ai_tg_writer_app
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
       - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=ai_tg_writer
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
-      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
-      - GIN_MODE=release
     volumes:
       - ./audio:/root/audio
     networks:
