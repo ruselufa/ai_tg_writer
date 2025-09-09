@@ -92,6 +92,58 @@ var (
 		},
 		[]string{"message_type"}, // response, error, notification
 	)
+
+	// Активные пользователи (текущие сессии)
+	activeTelegramUsers = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "telegram_active_users",
+			Help: "Number of currently active Telegram users",
+		},
+	)
+
+	// DeepSeek токены
+	deepseekTokensUsed = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "deepseek_tokens_used_total",
+			Help: "Total number of DeepSeek tokens used",
+		},
+		[]string{"type"}, // input, output, total
+	)
+
+	// Платежи
+	paymentsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "payments_total",
+			Help: "Total number of payments",
+		},
+		[]string{"status", "provider"}, // success, failed, pending; yookassa, prodamus
+	)
+
+	paymentAmount = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "payment_amount_total",
+			Help: "Total payment amount in rubles",
+		},
+		[]string{"status", "provider"},
+	)
+
+	paymentDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "payment_duration_seconds",
+			Help:    "Payment processing duration in seconds",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"provider"},
+	)
+
+	// Ошибки
+	errorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "errors_total",
+			Help: "Total number of errors",
+		},
+		[]string{"type", "component"}, // payment, voice, api; yookassa, whisper, deepseek
+	)
 )
 
 // HTTP метрики
@@ -138,3 +190,30 @@ func RecordTelegramMessageSent(messageType string) {
 	telegramMessagesSent.WithLabelValues(messageType).Inc()
 }
 
+// Активные пользователи Telegram
+func SetActiveTelegramUsers(count int) {
+	activeTelegramUsers.Set(float64(count))
+}
+
+// DeepSeek токены
+func RecordDeepSeekTokens(tokenType string, count int) {
+	deepseekTokensUsed.WithLabelValues(tokenType).Add(float64(count))
+}
+
+// Платежи
+func RecordPayment(status, provider string, amount float64, duration time.Duration) {
+	paymentsTotal.WithLabelValues(status, provider).Inc()
+	paymentAmount.WithLabelValues(status, provider).Add(amount)
+	paymentDuration.WithLabelValues(provider).Observe(duration.Seconds())
+}
+
+// Ошибки
+func RecordError(errorType, component string) {
+	errorsTotal.WithLabelValues(errorType, component).Inc()
+}
+
+// InitMetrics инициализирует все метрики
+func InitMetrics() {
+	// Метрики уже зарегистрированы при импорте пакета благодаря promauto
+	// Эта функция нужна только для явной инициализации
+}

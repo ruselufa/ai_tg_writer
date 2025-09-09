@@ -1,12 +1,12 @@
 {
   "id": null,
-  "title": "AI TG Writer Monitoring",
+  "title": "AI TG Writer Monitoring - Fixed",
   "tags": ["ai", "telegram", "bot"],
   "timezone": "browser",
   "panels": [
     {
       "id": 1,
-      "title": "HTTP Requests Rate",
+      "title": "HTTP Requests Rate (per minute)",
       "type": "graph",
       "gridPos": {
         "h": 8,
@@ -16,20 +16,22 @@
       },
       "targets": [
         {
-          "expr": "rate(http_requests_total[5m])",
+          "expr": "rate(http_requests_total[1m]) * 60",
           "legendFormat": "{{method}} {{endpoint}}",
           "refId": "A"
         }
       ],
       "yAxes": [
         {
-          "label": "requests/sec"
+          "label": "requests/min"
         }
-      ]
+      ],
+      "lines": true,
+      "points": false
     },
     {
       "id": 2,
-      "title": "Voice Messages Processed",
+      "title": "Voice Messages Rate (per minute)",
       "type": "graph",
       "gridPos": {
         "h": 8,
@@ -39,57 +41,188 @@
       },
       "targets": [
         {
-          "expr": "rate(voice_messages_processed_total[5m])",
+          "expr": "rate(voice_messages_processed_total[1m]) * 60",
           "legendFormat": "{{status}} ({{user_tariff}})",
           "refId": "A"
         }
-      ]
+      ],
+      "lines": true,
+      "points": false
     },
     {
       "id": 3,
-      "title": "Active Users",
-      "type": "stat",
+      "title": "Active Telegram Users",
+      "type": "graph",
       "gridPos": {
-        "h": 4,
-        "w": 6,
+        "h": 8,
+        "w": 12,
         "x": 0,
         "y": 8
       },
       "targets": [
         {
-          "expr": "active_users_total",
+          "expr": "telegram_active_users",
+          "legendFormat": "Active Users",
           "refId": "A"
         }
-      ]
+      ],
+      "lines": true,
+      "points": false
     },
     {
       "id": 4,
-      "title": "Voice Processing Duration",
+      "title": "Voice Processing Duration (avg)",
       "type": "graph",
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 12
+        "w": 12,
+        "x": 12,
+        "y": 8
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(voice_processing_duration_seconds_bucket[5m]))",
-          "legendFormat": "95th percentile",
+          "expr": "rate(voice_processing_duration_seconds_sum[1m]) / rate(voice_processing_duration_seconds_count[1m])",
+          "legendFormat": "{{stage}} avg duration",
+          "refId": "A"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 5,
+      "title": "DeepSeek Tokens Rate (per minute)",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "rate(deepseek_tokens_used_total[1m]) * 60",
+          "legendFormat": "{{type}} tokens",
+          "refId": "A"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 6,
+      "title": "Payments Rate (per minute)",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "rate(payments_total[1m]) * 60",
+          "legendFormat": "{{status}} ({{provider}})",
+          "refId": "A"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 7,
+      "title": "Payment Errors Rate (per minute)",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(errors_total{type=\"payment\"}[1m]) * 60",
+          "legendFormat": "Payment Errors",
+          "refId": "A"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 8,
+      "title": "Payment Amount Rate (per minute)",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(payment_amount_total[1m]) * 60",
+          "legendFormat": "{{status}} ({{provider}})",
+          "refId": "A"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 9,
+      "title": "API Errors Rate (per minute)",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "rate(errors_total[1m]) * 60",
+          "legendFormat": "{{type}} ({{component}})",
+          "refId": "A"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 10,
+      "title": "Total Counts (accumulated)",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "increase(http_requests_total[1h])",
+          "legendFormat": "HTTP Total",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.50, rate(voice_processing_duration_seconds_bucket[5m]))",
-          "legendFormat": "50th percentile",
+          "expr": "increase(voice_messages_processed_total[1h])",
+          "legendFormat": "Voice Total",
           "refId": "B"
+        },
+        {
+          "expr": "increase(deepseek_tokens_used_total[1h])",
+          "legendFormat": "Tokens Total",
+          "refId": "C"
         }
-      ]
+      ],
+      "lines": true,
+      "points": false
     }
   ],
   "time": {
-    "from": "now-1h",
+    "from": "now-30m",
     "to": "now"
   },
   "refresh": "5s"
 }
-

@@ -52,6 +52,9 @@ func (s *Server) SetupRoutes(
 	// Тестовый эндпоинт для проверки доступности через localtunnel
 	s.router.HandleFunc("/ping", s.handlePing).Methods("GET")
 
+	// Тестовый эндпоинт для генерации метрик
+	s.router.HandleFunc("/test-metrics", s.handleTestMetrics).Methods("GET")
+
 	// Добавляем эндпоинт для метрик Prometheus
 	s.router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 
@@ -79,6 +82,42 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 		response["user_agent"] = ua
 	}
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// handleTestMetrics — тестовый эндпоинт для генерации метрик
+func (s *Server) handleTestMetrics(w http.ResponseWriter, r *http.Request) {
+	// Генерируем тестовые метрики
+	monitoring.RecordVoiceMessageProcessed("success", "premium")
+	monitoring.RecordVoiceMessageProcessed("success", "basic")
+	monitoring.RecordVoiceProcessingDuration("whisper", 2*time.Second)
+	monitoring.RecordVoiceProcessingDuration("total", 3*time.Second)
+
+	monitoring.RecordTelegramMessageReceived("voice", "premium")
+	monitoring.RecordTelegramMessageReceived("text", "basic")
+	monitoring.RecordTelegramMessageSent("response")
+
+	monitoring.RecordDeepSeekTokens("input", 100)
+	monitoring.RecordDeepSeekTokens("output", 50)
+	monitoring.RecordDeepSeekTokens("total", 150)
+
+	monitoring.RecordPayment("success", "yookassa", 990.0, 2*time.Second)
+	monitoring.RecordPayment("pending", "yookassa", 1990.0, 1*time.Second)
+	monitoring.RecordPayment("failed", "prodamus", 500.0, 3*time.Second)
+
+	monitoring.RecordError("payment", "yookassa")
+	monitoring.RecordError("api", "deepseek")
+	monitoring.RecordError("voice", "whisper")
+
+	monitoring.MarkUserActiveGlobal(123)
+	monitoring.MarkUserActiveGlobal(456)
+
+	monitoring.RecordExternalAPICall("whisper", "success")
+	monitoring.RecordExternalAPICall("deepseek", "success")
+	monitoring.RecordExternalAPICall("yookassa", "error")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "success", "message": "Test metrics generated"}`))
 }
 
 // monitoringMiddleware добавляет метрики и логирование

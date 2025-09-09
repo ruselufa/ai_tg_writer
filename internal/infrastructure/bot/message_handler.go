@@ -2,6 +2,7 @@ package bot
 
 import (
 	"ai_tg_writer/internal/infrastructure/voice"
+	"ai_tg_writer/internal/monitoring"
 	"fmt"
 	"log"
 	"regexp"
@@ -32,6 +33,10 @@ func NewMessageHandler(stateManager *StateManager, voiceHandler *voice.VoiceHand
 func (mh *MessageHandler) HandleMessage(bot *Bot, message *tgbotapi.Message) bool {
 	userID := message.From.ID
 	state := mh.stateManager.GetState(userID)
+
+	// Записываем метрики активности пользователя
+	monitoring.RecordTelegramMessageReceived("text", "unknown")
+	monitoring.MarkUserActiveGlobal(userID) // Отмечаем пользователя как активного
 
 	if state.WaitingForEmail && message.Text != "" {
 		email := strings.TrimSpace(message.Text)

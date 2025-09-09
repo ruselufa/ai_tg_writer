@@ -157,6 +157,8 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 	// Записываем метрики транскрипции
 	monitoring.RecordExternalAPICall("lemon", "success")
 	monitoring.RecordVoiceProcessingDuration("whisper", whisperDuration)
+	monitoring.RecordTelegramMessageReceived("voice", "unknown")
+	monitoring.MarkUserActiveGlobal(userID) // Отмечаем пользователя как активного
 
 	logger.WithUser(userID).WithFields(map[string]interface{}{
 		"whisper_duration": whisperDuration.String(),

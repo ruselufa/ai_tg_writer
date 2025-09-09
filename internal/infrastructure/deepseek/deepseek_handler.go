@@ -1,6 +1,7 @@
 package deepseek
 
 import (
+	"ai_tg_writer/internal/monitoring"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -296,13 +297,24 @@ func (dh *DeepSeekHandler) makeSingleRequest(request DeepSeekRequest) (*DeepSeek
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		monitoring.RecordError("api", "deepseek")
 		return nil, fmt.Errorf("ошибка API: %s - %s", resp.Status, string(body))
 	}
 
 	var response DeepSeekResponse
 	if err := json.Unmarshal(body, &response); err != nil {
+		monitoring.RecordError("api", "deepseek")
 		return nil, fmt.Errorf("ошибка парсинга ответа: %v", err)
 	}
+
+	// Записываем метрики использования токенов (примерные значения)
+	// В реальном API ответе должны быть поля usage.prompt_tokens и usage.completion_tokens
+	inputTokens := len(strings.Split(request.Messages[0].Content, " "))
+	outputTokens := len(strings.Split(response.Choices[0].Message.Content, " "))
+
+	monitoring.RecordDeepSeekTokens("input", inputTokens)
+	monitoring.RecordDeepSeekTokens("output", outputTokens)
+	monitoring.RecordDeepSeekTokens("total", inputTokens+outputTokens)
 
 	return &response, nil
 }

@@ -4,6 +4,7 @@ import (
 	"ai_tg_writer/internal/domain"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/voice"
+	"ai_tg_writer/internal/monitoring"
 	"ai_tg_writer/internal/service"
 	"encoding/json"
 	"fmt"
@@ -52,6 +53,9 @@ func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandl
 // HandleCallback обрабатывает callback от инлайн-кнопок
 func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQuery) {
 	log.Printf("Callback от пользователя %d: %s", callback.From.ID, callback.Data)
+
+	// Отмечаем пользователя как активного при нажатии кнопки
+	monitoring.MarkUserActiveGlobal(callback.From.ID)
 
 	switch callback.Data {
 	case "create_post":

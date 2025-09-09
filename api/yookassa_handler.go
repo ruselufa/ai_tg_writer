@@ -4,6 +4,7 @@ import (
 	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/yookassa"
+	"ai_tg_writer/internal/monitoring"
 	"ai_tg_writer/internal/service"
 	"encoding/json"
 	"log"
@@ -30,9 +31,11 @@ func NewYooKassaHandler(subs *service.SubscriptionService, db *database.DB, bot 
 // 6.1 Создать первичный платеж для привязки карты
 // POST /yookassa/init?user_id=123&amount=990.00
 func (h *YooKassaHandler) CreateInit(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	userID := r.URL.Query().Get("user_id")
 	amount := r.URL.Query().Get("amount")
 	if userID == "" || amount == "" {
+		monitoring.RecordError("payment", "yookassa")
 		http.Error(w, "user_id and amount required", http.StatusBadRequest)
 		return
 	}
@@ -47,9 +50,15 @@ func (h *YooKassaHandler) CreateInit(w http.ResponseWriter, r *http.Request) {
 		map[string]string{"tg_user_id": userID},
 	)
 	if err != nil {
+		monitoring.RecordError("payment", "yookassa")
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+
+	// Записываем метрики успешного создания платежа
+	amountFloat, _ := strconv.ParseFloat(amount, 64)
+	monitoring.RecordPayment("pending", "yookassa", amountFloat, time.Since(startTime))
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(payment)
 }
