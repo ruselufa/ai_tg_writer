@@ -74,14 +74,14 @@ func (h *YooKassaHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	log.Printf("=== YooKassa Webhook Received ===")
-	log.Printf("Event: %s", evt.Event)
-	log.Printf("Object: %+v", evt.Object)
+	monitoring.Debug("YooKassa Webhook: Event=%s", evt.Event)
+	monitoring.RecordLogMessage("info", "payment")
 
 	// Получим платеж, чтобы подтвердить статус
 	id, _ := evt.Object["id"].(string)
 	if id == "" {
-		log.Printf("❌ Payment ID not found in webhook object")
+		monitoring.Error("Payment ID not found in webhook object")
+		monitoring.RecordLogMessage("error", "payment")
 		w.WriteHeader(http.StatusOK)
 		return
 	}

@@ -216,6 +216,831 @@
           "refId": "C"
         }
       ],
+        "lines": true,
+        "points": false
+      },
+    {
+      "id": 11,
+      "title": "CPU Usage",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "CPU Usage %",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "CPU %",
+          "max": 100,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 12,
+      "title": "Memory Usage",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "legendFormat": "Memory Usage %",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Memory %",
+          "max": 100,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 13,
+      "title": "Disk Usage",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "100 - ((node_filesystem_avail_bytes{mountpoint=\"/\"} * 100) / node_filesystem_size_bytes{mountpoint=\"/\"})",
+          "legendFormat": "Disk Usage %",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Disk %",
+          "max": 100,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 14,
+      "title": "Network I/O",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_bytes_total[5m])",
+          "legendFormat": "RX {{device}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_network_transmit_bytes_total[5m])",
+          "legendFormat": "TX {{device}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Bytes/sec"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 15,
+      "title": "Load Average",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 48
+      },
+      "targets": [
+        {
+          "expr": "node_load1",
+          "legendFormat": "1m Load",
+          "refId": "A"
+        },
+        {
+          "expr": "node_load5",
+          "legendFormat": "5m Load",
+          "refId": "B"
+        },
+        {
+          "expr": "node_load15",
+          "legendFormat": "15m Load",
+          "refId": "C"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Load"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 16,
+      "title": "Disk I/O",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 48
+      },
+      "targets": [
+        {
+          "expr": "rate(node_disk_read_bytes_total[5m])",
+          "legendFormat": "Read {{device}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_disk_written_bytes_total[5m])",
+          "legendFormat": "Write {{device}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Bytes/sec"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 17,
+      "title": "Process Count",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 48
+      },
+      "targets": [
+        {
+          "expr": "node_procs_running",
+          "legendFormat": "Running",
+          "refId": "A"
+        },
+        {
+          "expr": "node_procs_blocked",
+          "legendFormat": "Blocked",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Processes"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 18,
+      "title": "System Uptime",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 48
+      },
+      "targets": [
+        {
+          "expr": "node_boot_time_seconds",
+          "legendFormat": "Boot Time",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "Database Connections",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 56
+      },
+      "targets": [
+        {
+          "expr": "pg_stat_database_numbackends",
+          "legendFormat": "Active Connections",
+          "refId": "A"
+        },
+        {
+          "expr": "pg_settings_max_connections",
+          "legendFormat": "Max Connections",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Connections"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 20,
+      "title": "Database Size",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 56
+      },
+      "targets": [
+        {
+          "expr": "pg_database_size_bytes / 1024 / 1024",
+          "legendFormat": "Database Size (MB)",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Size (MB)"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 21,
+      "title": "Database Queries",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 56
+      },
+      "targets": [
+        {
+          "expr": "rate(pg_stat_database_tup_returned[5m])",
+          "legendFormat": "Tuples Returned/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(pg_stat_database_tup_fetched[5m])",
+          "legendFormat": "Tuples Fetched/sec",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Tuples/sec"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 22,
+      "title": "Database Locks",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 56
+      },
+      "targets": [
+        {
+          "expr": "pg_locks_count",
+          "legendFormat": "{{mode}} Locks",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Locks"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 23,
+      "title": "Disk Space Usage",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "targets": [
+        {
+          "expr": "node_filesystem_size_bytes{mountpoint=\"/\"} / 1024 / 1024",
+          "legendFormat": "Total Space (MB)",
+          "refId": "A"
+        },
+        {
+          "expr": "(node_filesystem_size_bytes{mountpoint=\"/\"} - node_filesystem_avail_bytes{mountpoint=\"/\"}) / 1024 / 1024",
+          "legendFormat": "Used Space (MB)",
+          "refId": "B"
+        },
+        {
+          "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"} / 1024 / 1024",
+          "legendFormat": "Free Space (MB)",
+          "refId": "C"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Space (MB)"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 24,
+      "title": "Database Cache Hit Ratio",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 64
+      },
+      "targets": [
+        {
+          "expr": "pg_stat_database_blks_hit / (pg_stat_database_blks_hit + pg_stat_database_blks_read) * 100",
+          "legendFormat": "Cache Hit Ratio %",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Hit Ratio %",
+          "max": 100,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 25,
+      "title": "Business Metrics - Conversions",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 72
+      },
+      "targets": [
+        {
+          "expr": "rate(user_conversions_total[5m]) * 60",
+          "legendFormat": "{{from_tariff}} -> {{to_tariff}}",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Conversions/min"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 26,
+      "title": "Business Metrics - Retention & ARPU",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 72
+      },
+      "targets": [
+        {
+          "expr": "user_retention_rate",
+          "legendFormat": "Retention {{period}}",
+          "refId": "A"
+        },
+        {
+          "expr": "user_arpu / 100",
+          "legendFormat": "ARPU {{period}} (scaled)",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Rate / ARPU",
+          "max": 1
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 27,
+      "title": "Quality Metrics - Success Rates",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 80
+      },
+      "targets": [
+        {
+          "expr": "voice_message_success_rate",
+          "legendFormat": "Voice Success {{user_tariff}}",
+          "refId": "A"
+        },
+        {
+          "expr": "processing_success_rate",
+          "legendFormat": "Processing {{process_type}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Success Rate",
+          "max": 1,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 28,
+      "title": "Quality Metrics - API Response Time",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 80
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(api_response_time_seconds_bucket[5m]))",
+          "legendFormat": "95th percentile {{endpoint}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(api_response_time_seconds_bucket[5m]))",
+          "legendFormat": "50th percentile {{endpoint}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Response Time (s)"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 29,
+      "title": "External Services - Latency",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 88
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(external_api_latency_seconds_bucket[5m]))",
+          "legendFormat": "95th percentile {{service}}",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Latency (s)"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 30,
+      "title": "External Services - Success Rate & Health",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 88
+      },
+      "targets": [
+        {
+          "expr": "external_api_success_rate",
+          "legendFormat": "Success Rate {{service}}",
+          "refId": "A"
+        },
+        {
+          "expr": "external_service_health",
+          "legendFormat": "Health {{service}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Rate / Health",
+          "max": 1,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 31,
+      "title": "Performance - Goroutines & Memory",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 96
+      },
+      "targets": [
+        {
+          "expr": "goroutine_count",
+          "legendFormat": "Goroutines",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(memory_allocations_total[5m]) * 60",
+          "legendFormat": "Allocations/min {{size_class}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Count"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 32,
+      "title": "Performance - GC & Worker Pools",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 96
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(gc_pause_duration_seconds_bucket[5m]))",
+          "legendFormat": "GC Pause 95th {{gc_type}}",
+          "refId": "A"
+        },
+        {
+          "expr": "worker_pool_utilization",
+          "legendFormat": "Utilization {{pool_name}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Duration (s) / Utilization %"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 33,
+      "title": "User Experience - Journey Steps",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 104
+      },
+      "targets": [
+        {
+          "expr": "rate(user_journey_steps_total[5m]) * 60",
+          "legendFormat": "{{step}} ({{user_tariff}})",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Steps/min"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 34,
+      "title": "User Experience - Satisfaction & Feedback",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 104
+      },
+      "targets": [
+        {
+          "expr": "user_satisfaction_score",
+          "legendFormat": "Satisfaction {{feature}} ({{user_tariff}})",
+          "refId": "A"
+        },
+        {
+          "expr": "user_feedback_sentiment",
+          "legendFormat": "Sentiment {{feature}} ({{user_tariff}})",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Score / Sentiment",
+          "max": 5,
+          "min": -1
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 35,
+      "title": "Support & Queue Metrics",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 112
+      },
+      "targets": [
+        {
+          "expr": "rate(support_ticket_volume_total[5m]) * 60",
+          "legendFormat": "Tickets {{category}} ({{priority}})",
+          "refId": "A"
+        },
+        {
+          "expr": "queue_length",
+          "legendFormat": "Queue {{queue_type}}",
+          "refId": "B"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Tickets/min / Queue Length"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 36,
+      "title": "External API Quota Usage",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 112
+      },
+      "targets": [
+        {
+          "expr": "external_api_quota_usage",
+          "legendFormat": "{{service}} {{quota_type}}",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Usage %",
+          "max": 100,
+          "min": 0
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 37,
+      "title": "Log Messages by Level",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 120
+      },
+      "targets": [
+        {
+          "expr": "rate(log_messages_total[5m]) * 60",
+          "legendFormat": "{{level}} ({{component}})",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Logs/min"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 38,
+      "title": "User Interactions",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 120
+      },
+      "targets": [
+        {
+          "expr": "rate(user_interactions_total[5m]) * 60",
+          "legendFormat": "{{type}} ({{user_tariff}})",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Interactions/min"
+        }
+      ],
+      "lines": true,
+      "points": false
+    },
+    {
+      "id": 39,
+      "title": "Processing Steps",
+      "type": "graph",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 128
+      },
+      "targets": [
+        {
+          "expr": "rate(processing_steps_total[5m]) * 60",
+          "legendFormat": "{{step}} ({{status}})",
+          "refId": "A"
+        }
+      ],
+      "yAxes": [
+        {
+          "label": "Steps/min"
+        }
+      ],
       "lines": true,
       "points": false
     }

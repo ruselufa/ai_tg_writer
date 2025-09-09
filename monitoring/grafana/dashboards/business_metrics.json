@@ -1,0 +1,325 @@
+{
+  "id": null,
+  "title": "AI TG Writer - Business Metrics",
+  "tags": ["ai-tg-writer", "business"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+      {
+        "id": 1,
+        "title": "User Conversions",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "rate(user_conversions_total[5m]) * 60",
+            "legendFormat": "{{from_tariff}} -> {{to_tariff}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Conversions/min"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 2,
+        "title": "Retention Rate",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        },
+        "targets": [
+          {
+            "expr": "user_retention_rate",
+            "legendFormat": "Retention {{period}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Retention Rate",
+            "max": 1,
+            "min": 0
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 3,
+        "title": "ARPU (Average Revenue Per User)",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        },
+        "targets": [
+          {
+            "expr": "user_arpu",
+            "legendFormat": "ARPU {{period}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "ARPU (RUB)"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 4,
+        "title": "Churn Rate",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        },
+        "targets": [
+          {
+            "expr": "user_churn_rate",
+            "legendFormat": "Churn {{period}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Churn Rate",
+            "max": 1,
+            "min": 0
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 5,
+        "title": "Session Duration by Tariff",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 16
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(user_session_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile {{user_tariff}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(user_session_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile {{user_tariff}}",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Duration (seconds)"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 6,
+        "title": "Bot Usage - Free vs Paid",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 24
+        },
+        "targets": [
+          {
+            "expr": "rate(telegram_messages_received_total{user_tariff=\"free\"}[5m]) * 60",
+            "legendFormat": "Free Users - Messages/min",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(telegram_messages_received_total{user_tariff=\"premium\"}[5m]) * 60",
+            "legendFormat": "Premium Users - Messages/min",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Messages/min"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 7,
+        "title": "Voice Messages - Free vs Paid",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 24
+        },
+        "targets": [
+          {
+            "expr": "rate(voice_messages_processed_total{user_tariff=\"free\"}[5m]) * 60",
+            "legendFormat": "Free Users - Voice/min",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(voice_messages_processed_total{user_tariff=\"premium\"}[5m]) * 60",
+            "legendFormat": "Premium Users - Voice/min",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Voice Messages/min"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 8,
+        "title": "Active Users - Free vs Paid",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 32
+        },
+        "targets": [
+          {
+            "expr": "telegram_active_users{user_tariff=\"free\"}",
+            "legendFormat": "Free Active Users",
+            "refId": "A"
+          },
+          {
+            "expr": "telegram_active_users{user_tariff=\"premium\"}",
+            "legendFormat": "Premium Active Users",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Active Users"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 9,
+        "title": "Feature Usage - Free vs Paid",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 32
+        },
+        "targets": [
+          {
+            "expr": "rate(feature_usage_total{user_tariff=\"free\"}[5m]) * 60",
+            "legendFormat": "Free - {{feature}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(feature_usage_total{user_tariff=\"premium\"}[5m]) * 60",
+            "legendFormat": "Premium - {{feature}}",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Usage/min"
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 10,
+        "title": "User Satisfaction - Free vs Paid",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 40
+        },
+        "targets": [
+          {
+            "expr": "user_satisfaction_score{user_tariff=\"free\"}",
+            "legendFormat": "Free - {{feature}}",
+            "refId": "A"
+          },
+          {
+            "expr": "user_satisfaction_score{user_tariff=\"premium\"}",
+            "legendFormat": "Premium - {{feature}}",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Satisfaction Score",
+            "max": 5,
+            "min": 1
+          }
+        ],
+        "lines": true,
+        "points": false
+      },
+      {
+        "id": 11,
+        "title": "Support Tickets - Free vs Paid",
+        "type": "graph",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 40
+        },
+        "targets": [
+          {
+            "expr": "rate(support_ticket_volume_total[5m]) * 60",
+            "legendFormat": "{{category}} ({{priority}})",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Tickets/min"
+          }
+        ],
+        "lines": true,
+        "points": false
+      }
+    ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "5s"
+}

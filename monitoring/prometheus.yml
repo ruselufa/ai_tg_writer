@@ -16,6 +16,16 @@ scrape_configs:
     static_configs:
       - targets: ['postgres:5432']
 
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['node_exporter:9100']
+    scrape_interval: 5s
+
+  - job_name: 'postgres_exporter'
+    static_configs:
+      - targets: ['postgres_exporter:9187']
+    scrape_interval: 5s
+
 alerting:
   alertmanagers:
     - static_configs:

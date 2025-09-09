@@ -44,13 +44,16 @@ func main() {
 	monitoring.InitActiveUsersManager(15 * time.Second)
 	logger.Info("Менеджер активных пользователей инициализирован")
 
+	// Инициализируем систему логирования
+	monitoring.InitLogging()
+
 	// Инициализируем метрики
 	monitoring.InitMetrics()
 
 	// Принудительно регистрируем все метрики
 	_ = monitoring.NewLogger() // Это зарегистрирует все метрики
 
-	logger.Info("Метрики инициализированы")
+	monitoring.System("Метрики и система логирования инициализированы")
 
 	// Загружаем переменные окружения
 	logger.Info("Загружаем переменные окружения")

@@ -52,7 +52,8 @@ func NewInlineHandler(stateManager *StateManager, voiceHandler *voice.VoiceHandl
 
 // HandleCallback обрабатывает callback от инлайн-кнопок
 func (ih *InlineHandler) HandleCallback(bot *Bot, callback *tgbotapi.CallbackQuery) {
-	log.Printf("Callback от пользователя %d: %s", callback.From.ID, callback.Data)
+	monitoring.Debug("Callback от пользователя %d: %s", callback.From.ID, callback.Data)
+	monitoring.RecordUserInteraction("callback", "unknown") // TODO: определить тариф пользователя
 
 	// Отмечаем пользователя как активного при нажатии кнопки
 	monitoring.MarkUserActiveGlobal(callback.From.ID)
