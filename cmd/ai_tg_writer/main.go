@@ -18,6 +18,7 @@ import (
 	"ai_tg_writer/internal/infrastructure/database"
 	"ai_tg_writer/internal/infrastructure/voice"
 	"ai_tg_writer/internal/infrastructure/yookassa"
+	"ai_tg_writer/internal/monitoring"
 	"ai_tg_writer/internal/service"
 	"ai_tg_writer/internal/worker"
 
@@ -26,40 +27,53 @@ import (
 )
 
 func main() {
+	// Инициализируем логгер
+	logger := monitoring.NewLogger()
+	logger.Info("Запуск приложения")
+
+	// Инициализируем трейсинг
+	tp, err := monitoring.InitTracing("ai_tg_writer")
+	if err != nil {
+		logger.WithError(err).Error("Ошибка инициализации трейсинга")
+	} else {
+		defer tp.Shutdown(context.Background())
+		logger.Info("Трейсинг инициализирован")
+	}
+
 	// Загружаем переменные окружения
-	fmt.Println("Загружаем переменные окружения")
+	logger.Info("Загружаем переменные окружения")
 	if err := godotenv.Load(); err != nil {
-		log.Println("Файл .env не найден, используем системные переменные")
+		logger.Warn("Файл .env не найден, используем системные переменные")
 	}
 
 	// Получаем токен бота из переменных окружения
-	fmt.Println("Получаем токен бота из переменных окружения")
+	logger.Info("Получаем токен бота из переменных окружения")
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
-		log.Fatal("TELEGRAM_BOT_TOKEN не установлен")
+		logger.Fatal("TELEGRAM_BOT_TOKEN не установлен")
 	}
-	fmt.Println("Токен бота: ", token)
+	logger.WithField("token_length", len(token)).Info("Токен бота получен")
 	// Создаем экземпляр бота
 	botAPI, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
-		log.Fatal(err)
+		logger.WithError(err).Fatal("Ошибка создания бота")
 	}
-	fmt.Println("Экземпляр бота создан")
+	logger.Info("Экземпляр бота создан")
 	botAPI.Debug = true
-	log.Printf("Бот %s запущен", botAPI.Self.UserName)
+	logger.WithField("bot_username", botAPI.Self.UserName).Info("Бот запущен")
 
 	// Инициализируем подключение к базе данных
-	fmt.Println("Инициализируем подключение к базе данных")
+	logger.Info("Инициализируем подключение к базе данных")
 	db, err := database.NewConnection()
 	if err != nil {
-		log.Fatalf("Ошибка подключения к базе данных: %v", err)
+		logger.WithError(err).Fatal("Ошибка подключения к базе данных")
 	}
-	fmt.Println("Подключение к базе данных успешно")
+	logger.Info("Подключение к базе данных успешно")
 	// Инициализируем таблицы
 	if err := db.InitTables(); err != nil {
-		log.Fatalf("Ошибка инициализации таблиц: %v", err)
+		logger.WithError(err).Fatal("Ошибка инициализации таблиц")
 	}
-	fmt.Println("Таблицы инициализированы")
+	logger.Info("Таблицы инициализированы")
 
 	// Создаем репозиторий подписок
 	subscriptionRepo := database.NewSubscriptionRepository(db)
@@ -94,13 +108,17 @@ func main() {
 	httpServer := api.NewServer("8080")
 	httpServer.SetupRoutes(subscriptionService, nil, db, customBot)
 
+	// Добавляем health check
+	healthChecker := monitoring.NewHealthChecker(db.DB)
+	httpServer.AddHealthCheck(healthChecker)
+
 	// Запускаем HTTP-сервер в горутине
 	go func() {
 		if err := httpServer.Start(); err != nil {
-			log.Fatalf("Ошибка запуска HTTP-сервера: %v", err)
+			logger.WithError(err).Fatal("Ошибка запуска HTTP-сервера")
 		}
 	}()
-	fmt.Println("HTTP-сервер запущен на порту 8080")
+	logger.Info("HTTP-сервер запущен на порту 8080")
 
 	// Создаем контекст для graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())

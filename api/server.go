@@ -3,18 +3,25 @@ package api
 import (
 	"ai_tg_writer/internal/infrastructure/bot"
 	"ai_tg_writer/internal/infrastructure/database"
+	"ai_tg_writer/internal/monitoring"
 	"ai_tg_writer/internal/service"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
-	router *mux.Router
-	port   string
+	router        *mux.Router
+	port          string
+	healthChecker *monitoring.HealthChecker
 }
 
 func NewServer(port string) *Server {
@@ -22,6 +29,11 @@ func NewServer(port string) *Server {
 		router: mux.NewRouter(),
 		port:   port,
 	}
+}
+
+func (s *Server) AddHealthCheck(healthChecker *monitoring.HealthChecker) {
+	s.healthChecker = healthChecker
+	s.router.HandleFunc("/health", s.healthChecker.HealthHandler).Methods("GET")
 }
 
 // SetupRoutes настраивает все маршруты сервера
@@ -40,8 +52,12 @@ func (s *Server) SetupRoutes(
 	// Тестовый эндпоинт для проверки доступности через localtunnel
 	s.router.HandleFunc("/ping", s.handlePing).Methods("GET")
 
-	// Добавляем middleware для логирования
-	s.router.Use(loggingMiddleware)
+	// Добавляем эндпоинт для метрик Prometheus
+	s.router.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
+	// Добавляем middleware для мониторинга
+	s.router.Use(monitoringMiddleware)
+	s.router.Use(otelhttp.NewMiddleware("ai_tg_writer"))
 
 	yk := NewYooKassaHandler(subscriptionService, db, bot)
 	yk.SetupRoutes(s.router)
@@ -65,12 +81,52 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// loggingMiddleware добавляет логирование запросов
-func loggingMiddleware(next http.Handler) http.Handler {
+// monitoringMiddleware добавляет метрики и логирование
+func monitoringMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s", r.RemoteAddr, r.Method, r.URL)
-		next.ServeHTTP(w, r)
+		start := time.Now()
+
+		// Создаем контекст с trace_id
+		ctx := context.WithValue(r.Context(), "trace_id", generateTraceID())
+		r = r.WithContext(ctx)
+
+		// Логируем запрос
+		logger := monitoring.NewLogger()
+		logger.WithContext(ctx).WithFields(map[string]interface{}{
+			"method": r.Method,
+			"path":   r.URL.Path,
+			"ip":     r.RemoteAddr,
+		}).Info("HTTP request")
+
+		// Обертываем ResponseWriter для отслеживания статуса
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
+
+		next.ServeHTTP(wrapped, r)
+
+		// Записываем метрики
+		duration := time.Since(start)
+		monitoring.RecordHTTPRequest(r.Method, r.URL.Path,
+			strconv.Itoa(wrapped.statusCode), duration)
+
+		logger.WithContext(ctx).WithFields(map[string]interface{}{
+			"status_code": wrapped.statusCode,
+			"duration":    duration.String(),
+		}).Info("HTTP response")
 	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func generateTraceID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 // Start запускает HTTP-сервер

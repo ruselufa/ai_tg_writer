@@ -13,6 +13,7 @@ import (
 	"ai_tg_writer/internal/infrastructure/deepseek"
 	"ai_tg_writer/internal/infrastructure/lemon"
 	"ai_tg_writer/internal/infrastructure/whisper"
+	"ai_tg_writer/internal/monitoring"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
@@ -93,6 +94,17 @@ func (vh *VoiceHandler) DownloadVoiceFile(fileID string) (string, error) {
 
 // ProcessVoiceMessage обрабатывает голосовое сообщение с логированием
 func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, error) {
+	startTime := time.Now()
+	userID := message.From.ID
+
+	// Логируем начало обработки
+	logger := monitoring.NewLogger()
+	logger.WithUser(userID).WithFields(map[string]interface{}{
+		"file_id":   message.Voice.FileID,
+		"duration":  message.Voice.Duration,
+		"file_size": message.Voice.FileSize,
+	}).Info("Начало обработки голосового сообщения")
+
 	voiceSentAt := time.Now().UTC()
 
 	// Создаем запись в истории
@@ -121,6 +133,7 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 	// Скачиваем файл
 	filePath, err := vh.DownloadVoiceFile(message.Voice.FileID)
 	if err != nil {
+		monitoring.RecordVoiceMessageProcessed("error", "unknown")
 		return "", err
 	}
 
@@ -129,17 +142,26 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 
 	// Отправляем на транскрипцию
 	whisperStart := time.Now().UTC()
-	log.Printf("Отправляем файл на транскрипцию: %s", filePath)
+	logger.WithUser(userID).Info("Отправляем файл на транскрипцию")
 
 	transcriptionResp, err := vh.lemonHandler.TranscribeAudio(filePath)
 	if err != nil {
+		monitoring.RecordExternalAPICall("lemon", "error")
+		monitoring.RecordVoiceMessageProcessed("error", "unknown")
 		return "", fmt.Errorf("ошибка отправки на транскрипцию: %v", err)
 	}
 
 	whisperDuration := time.Since(whisperStart)
 	voiceReceivedAt := time.Now().UTC()
 
-	log.Printf("Транскрипция завершена: %s", transcriptionResp.Text)
+	// Записываем метрики транскрипции
+	monitoring.RecordExternalAPICall("lemon", "success")
+	monitoring.RecordVoiceProcessingDuration("whisper", whisperDuration)
+
+	logger.WithUser(userID).WithFields(map[string]interface{}{
+		"whisper_duration": whisperDuration.String(),
+		"text_length":      len(transcriptionResp.Text),
+	}).Info("Транскрипция завершена")
 
 	// Обновляем историю с результатом транскрипции
 	if historyID > 0 && vh.postHistoryRepo != nil {
@@ -155,8 +177,18 @@ func (vh *VoiceHandler) ProcessVoiceMessage(message *tgbotapi.Message) (string, 
 	// Сохраняем ID истории в сообщении для последующего использования
 	if historyID > 0 {
 		// TODO: Передать historyID в message_handler для сохранения в состоянии пользователя
-		log.Printf("Создана запись в истории с ID: %d", historyID)
+		logger.WithUser(userID).WithField("history_id", historyID).Info("Создана запись в истории")
 	}
+
+	// Записываем общие метрики
+	totalDuration := time.Since(startTime)
+	monitoring.RecordVoiceProcessingDuration("total", totalDuration)
+	monitoring.RecordVoiceMessageProcessed("success", "unknown") // TODO: получить тариф пользователя
+
+	logger.WithUser(userID).WithFields(map[string]interface{}{
+		"total_duration": totalDuration.String(),
+		"history_id":     historyID,
+	}).Info("Обработка голосового сообщения завершена")
 
 	return transcriptionResp.Text, nil
 }
